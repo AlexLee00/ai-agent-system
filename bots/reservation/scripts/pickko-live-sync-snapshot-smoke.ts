@@ -210,6 +210,49 @@ async function runCyclePersistenceContract() {
     pickkoPw: 'pw',
   });
   assert.ok(logs.some((line) => line.includes('기록 실패 — 모니터 계속 진행')));
+
+  let rangeReturned = false;
+  let paidDailyFetches = 0;
+  const refreshPersisted = [];
+  const refreshService = createKioskPickkoCycleService({
+    ...createDeps((payload) => refreshPersisted.push(payload)),
+    loadPickkoLiveSnapshot: () => createSnapshot({
+      coverage: { from: '2026-07-21', to: '2026-08-21', complete: true },
+    }),
+    assessPickkoLiveSnapshot,
+    fetchPickkoEntries: async (_page, date, options = {}) => {
+      if (options.statusKeyword === '취소' || options.statusKeyword === '환불') {
+        return { entries: [], fetchOk: true };
+      }
+      if (options.receiptDate) return { entries: [], fetchOk: true };
+      if (options.endDate !== date && !rangeReturned) {
+        rangeReturned = true;
+        return {
+          entries: Array.from({ length: 20 }, (_, index) => ({
+            name: `range-${index}`,
+            phoneRaw: `0100000${String(index).padStart(4, '0')}`,
+            date: '2026-07-22',
+            start: `${String(index % 20).padStart(2, '0')}:00`,
+            end: `${String(index % 20).padStart(2, '0')}:50`,
+            room: '스터디룸A1',
+            statusText: '결제완료',
+          })),
+          fetchOk: true,
+        };
+      }
+      paidDailyFetches += 1;
+      return { entries: [], fetchOk: true };
+    },
+  });
+  await refreshService.preparePickkoCycle({
+    page: { url: () => 'https://pickkoadmin.test/study/index.html' },
+    today: '2026-07-22',
+    pickkoId: 'id',
+    pickkoPw: 'pw',
+  });
+  assert.ok(paidDailyFetches >= 32, 'coverage gap must trigger bounded daily refresh');
+  assert.equal(refreshPersisted[0].complete, true);
+  assert.ok(logs.some((line) => line.includes('trusted snapshot 갱신 필요')));
 }
 
 function runRangeSourceContract() {

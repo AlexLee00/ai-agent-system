@@ -25,6 +25,8 @@ export type CreateKioskPickkoCycleServiceDeps = {
   maskName: (name: string) => string;
   maskPhone: (phone: string) => string;
   persistPickkoLiveSnapshot?: (payload: Record<string, any>) => any;
+  loadPickkoLiveSnapshot?: () => any;
+  assessPickkoLiveSnapshot?: (snapshot: any, options: Record<string, any>) => { usable?: boolean };
 };
 
 export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServiceDeps) {
@@ -36,6 +38,8 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     maskName,
     maskPhone,
     persistPickkoLiveSnapshot,
+    loadPickkoLiveSnapshot,
+    assessPickkoLiveSnapshot,
   } = deps;
 
   const SOURCE_SCAN_DAYS_AHEAD = Number(process.env.KIOSK_SOURCE_SCAN_DAYS_AHEAD || 31);
@@ -187,6 +191,21 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     log(`✅ 픽코 로그인 완료: ${page.url()}`);
 
     const endDate = addDaysKST(today, SOURCE_SCAN_DAYS_AHEAD);
+    let trustedSnapshotRefreshNeeded = false;
+    if (loadPickkoLiveSnapshot && assessPickkoLiveSnapshot) {
+      try {
+        const snapshot = loadPickkoLiveSnapshot();
+        trustedSnapshotRefreshNeeded = assessPickkoLiveSnapshot(snapshot, {
+          from: today,
+          to: endDate,
+        }).usable !== true;
+      } catch (_error) {
+        trustedSnapshotRefreshNeeded = true;
+      }
+    }
+    if (trustedSnapshotRefreshNeeded) {
+      log('[Pickko snapshot] trusted snapshot 갱신 필요 — 날짜별 전체 조회 활성');
+    }
     const receiptFastScanResult = await fetchReceiptFastScanPaidEntries(page, today);
     const todayPaidResult = await fetchTodayPaidEntries(page, today);
     log(`\n[Pickko 조회] 이용일 ${today}~${endDate}, 상태=결제완료, 이용금액 필터 없음`);
@@ -196,7 +215,10 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
       endDate,
       statusKeyword: '결제완료',
       seedEntries: [...receiptFastScanResult.entries, ...todayPaidResult.entries],
-      useDateFallback: PICKKO_PAID_DATE_FALLBACK_ENABLED || receiptFastScanResult.skipped || !receiptFastScanResult.fetchOk,
+      useDateFallback: PICKKO_PAID_DATE_FALLBACK_ENABLED
+        || trustedSnapshotRefreshNeeded
+        || receiptFastScanResult.skipped
+        || !receiptFastScanResult.fetchOk,
     });
     const paidFetchOk = (receiptFastScanResult.fetchOk ?? true)
       && (todayPaidResult.fetchOk ?? true)
