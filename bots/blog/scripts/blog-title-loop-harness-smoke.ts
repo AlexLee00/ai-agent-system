@@ -12,7 +12,13 @@ const {
   validateTitleCandidate,
 } = require('../lib/title-feedback-loop.ts');
 const { buildContentHarnessReport } = require('../lib/content-harness.ts');
+const { buildTitleHistorySnapshot } = require('../lib/final-title-guard.ts');
 const { _testOnly: bloTest } = require('../lib/blo.ts');
+
+const EMPTY_TITLE_HISTORY = buildTitleHistorySnapshot(
+  { available: true, entries: [] },
+  { available: true, entries: [] },
+);
 
 function buildHarnessFixture() {
   const body = Array.from({ length: 70 }, (_, index) => (
@@ -60,6 +66,18 @@ async function main() {
   assert.match(prompt, /AI 기능 도입 전 합의할 범위 지표 책임/);
   assert.match(prompt, /topic_alignment.*0\.20.*0\.40/s);
   assert.match(prompt, /AI 기능.*바꾸거나 축약하지 않/s);
+
+  const recoveryPrompt = buildTitleCandidatePrompt({
+    category: '성장과성공',
+    baseTitle: '[성장과성공] 흔들리지 않는 목표 3가지 기준',
+    topic: '흔들리지 않는 목표 세우기',
+    content: buildSeoFixture(),
+    recoveryConflictTitle: '[성장과성공] 기존 목표 3가지 기준',
+    recoveryConflictReason: 'same_category_shared_frame',
+  });
+  assert.match(recoveryPrompt, /제목 후보 1개/);
+  assert.match(recoveryPrompt, /30일 이력과 충돌한 제목: \[성장과성공\] 기존 목표 3가지 기준/);
+  assert.match(recoveryPrompt, /충돌 판정 사유: same_category_shared_frame/);
 
   const title35 = `AI ${'가'.repeat(32)}`;
   const title36 = `AI ${'가'.repeat(33)}`;
@@ -184,6 +202,7 @@ async function main() {
     topic: '회의록 자동화',
     content: buildHarnessFixture(),
   }, {
+    historySnapshot: EMPTY_TITLE_HISTORY,
     generateCandidates: async () => [
       '회의록 자동화를 시작하기 전에 확인할 기준',
       '회의록 자동화 실패를 줄이는 4가지 기준',
@@ -208,6 +227,7 @@ async function main() {
     topic: '회의록 자동화',
     content: buildHarnessFixture(),
   }, {
+    historySnapshot: EMPTY_TITLE_HISTORY,
     generateCandidates: async () => [
       '새로운 업무 흐름을 바라보는 관점',
       '회의록 자동화 4가지 기준',
@@ -347,6 +367,7 @@ async function main() {
     topic: '기존 주제',
     content: '[IT정보와분석] 기존 단일 제목\n본문',
   }, {
+    historySnapshot: EMPTY_TITLE_HISTORY,
     generateCandidates: async () => {
       throw new Error('fixture generation failure');
     },

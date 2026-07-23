@@ -5,7 +5,10 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { callBlogFast } = require('./blog-llm-gateway.ts');
 const { isReaderFriendlyTitle } = require('./topic-selector.ts');
 const { checkBlogFormatRules, checkGeneralTitleAlignment, scoreSEO } = require('./quality-checker.ts');
-const { _assertDistinctGeneralTitle } = require('./gems-writer.ts');
+const {
+  assertTitleAgainstHistorySnapshot,
+  loadTitleHistorySnapshot,
+} = require('./final-title-guard.ts');
 
 const DEFAULT_DAYS = 30;
 const PROFILE_CACHE_MS = 30 * 60 * 1000;
@@ -203,13 +206,18 @@ function buildTitleCandidatePrompt(input = {}) {
   const categoryPrefix = category ? `[${category}] ` : '';
   const candidateMaxChars = Math.max(1, MAX_FINAL_TITLE_CHARS - categoryPrefix.length);
   const alignmentReference = String(input.topicTitleCandidate || input.topic || baseTitle).trim();
-  return `다음 블로그 글에 사용할 제목 후보 4개를 만드세요.
+  const recoveryConflictTitle = String(input.recoveryConflictTitle || '').trim();
+  const recoveryConflictReason = String(input.recoveryConflictReason || '').trim();
+  const requestedCount = recoveryConflictTitle ? 1 : 4;
+  return `다음 블로그 글에 사용할 제목 후보 ${requestedCount}개를 만드세요.
 
 카테고리: ${category || '일반'}
 선택된 주제: ${input.topic || baseTitle}
 기존 제목: ${baseTitle}
 제목 방향 기준: ${alignmentReference || baseTitle}
 ${requiredPhrase ? `반드시 모든 제목에 포함할 문구: ${requiredPhrase} (한 글자도 바꾸거나 축약하지 않음)` : ''}
+${recoveryConflictTitle ? `30일 이력과 충돌한 제목: ${recoveryConflictTitle}` : ''}
+${recoveryConflictReason ? `충돌 판정 사유: ${recoveryConflictReason}` : ''}
 본문 요약: ${String(input.content || '').replace(/\s+/g, ' ').slice(0, 700)}
 
 규칙:
@@ -219,6 +227,7 @@ ${requiredPhrase ? `반드시 모든 제목에 포함할 문구: ${requiredPhras
 - 성공적인, 효과적인, 혁신적인, 완벽한, 최고의, 필수적인, 최적의, 궁극의 같은 추상어와 과장 표현을 사용하지 않음
 - topic_alignment 기준: 제목 방향 기준과 후보의 2자 이상 단어 집합 중 큰 쪽을 분모로 한 정확한 교집합 비율을 최소 0.20, 가능하면 0.40 이상 유지하고 다른 주제로 전환하지 않음
 - 같은 주제를 유지하되 길이, 숫자, 질문형, 구체적 결과 표현을 서로 다르게 구성
+${recoveryConflictTitle ? '- 충돌한 제목의 어휘 조합과 구조를 반복하지 말고 완전히 다른 표현 틀을 사용' : ''}
 - JSON 문자열 배열만 출력`;
 }
 
@@ -279,17 +288,21 @@ function replaceTitleLine(content = '', title = '') {
   return lines.join('\n');
 }
 
-function fallbackResult(input = {}, reason = 'unknown', rejectedCandidates = [], validCandidates = [], assertDistinctTitle = _assertDistinctGeneralTitle) {
+function fallbackResult(input = {}, reason = 'unknown', rejectedCandidates = [], validCandidates = [], assertDistinctTitle = () => {}) {
   const baseTitle = String(input.baseTitle || '').trim();
   const selectedCandidate = validCandidates.find((title) => String(title || '').trim() !== baseTitle)
     || validCandidates[0]
     || '';
   if (selectedCandidate) {
+    const rankedCandidates = [
+      selectedCandidate,
+      ...validCandidates.filter((title) => title !== selectedCandidate),
+    ];
     return {
       title: selectedCandidate,
       content: replaceTitleLine(input.content, selectedCandidate),
       metadata: {
-        title_candidates: validCandidates.map((title) => ({ title, score: 0, features: [] })),
+        title_candidates: rankedCandidates.map((title) => ({ title, score: 0, features: [] })),
         title_rejected_candidates: rejectedCandidates,
         title_selected_reason: selectedCandidate === baseTitle
           ? `fallback_existing_title:${reason}`
@@ -301,17 +314,27 @@ function fallbackResult(input = {}, reason = 'unknown', rejectedCandidates = [],
   try {
     assertDistinctTitle(input.category, baseTitle);
   } catch (error) {
+    if (error?.code === 'title_history_unavailable') throw error;
+    const selectedReason = `blocked_no_distinct_title:${reason}`;
     return {
       blocked: true,
       title: baseTitle,
       content: replaceTitleLine(input.content, baseTitle),
+      titleGuardDetails: {
+        attemptedTitle: baseTitle,
+        conflictTitle: error?.details?.conflictTitle || error?.details?.conflict || null,
+        conflictSource: error?.details?.conflictSource || null,
+        matchedPredicate: error?.details?.matchedPredicate || null,
+        candidateCount: validCandidates.length,
+        selectedReason,
+      },
       metadata: {
         title_candidates: [],
         title_rejected_candidates: [
           ...rejectedCandidates,
           { title: baseTitle, reasons: [`recent_title_overlap:${String(error?.message || error).slice(0, 120)}`] },
         ],
-        title_selected_reason: `blocked_no_distinct_title:${reason}`,
+        title_selected_reason: selectedReason,
       },
     };
   }
@@ -326,10 +349,33 @@ function fallbackResult(input = {}, reason = 'unknown', rejectedCandidates = [],
   };
 }
 
+async function resolveTitleHistoryAssertion(dependencies = {}) {
+  if (typeof dependencies.assertDistinctTitle === 'function') {
+    return dependencies.assertDistinctTitle;
+  }
+  const historySnapshot = dependencies.historySnapshot
+    || await loadTitleHistorySnapshot(dependencies.titleHistoryOptions || dependencies);
+  return (_category, title) => assertTitleAgainstHistorySnapshot(title, historySnapshot);
+}
+
 async function runTitleFeedbackLoop(input = {}, dependencies = {}) {
   const generateCandidates = dependencies.generateCandidates || generateTitleCandidates;
   const loadCorrelationProfile = dependencies.loadCorrelationProfile || loadTitleCorrelationProfile;
-  const assertDistinctTitle = dependencies.assertDistinctTitle || _assertDistinctGeneralTitle;
+  // Load history before the broad generation fallback so unavailable history stays fail-closed.
+  let assertDistinctTitle;
+  try {
+    assertDistinctTitle = await resolveTitleHistoryAssertion(dependencies);
+  } catch (error) {
+    if (error?.code === 'title_history_unavailable') {
+      error.details = {
+        ...error.details,
+        attemptedTitle: String(input.baseTitle || '').trim() || null,
+        candidateCount: 0,
+        selectedReason: 'title_history_unavailable',
+      };
+    }
+    throw error;
+  }
 
   try {
     const generated = await generateCandidates(input);
@@ -346,9 +392,10 @@ async function runTitleFeedbackLoop(input = {}, dependencies = {}) {
           assertDistinctTitle(input.category, title);
           return true;
         } catch (error) {
+          if (error?.code === 'title_history_unavailable') throw error;
           rejectedCandidates.push({
             title,
-            reasons: [`recent_title_overlap:${String(error?.message || error).slice(0, 120)}`],
+            reasons: [`recent_title_overlap:${String(error?.details?.matchedPredicate || error?.message || error).slice(0, 120)}`],
           });
           return false;
         }
@@ -377,6 +424,7 @@ async function runTitleFeedbackLoop(input = {}, dependencies = {}) {
       },
     };
   } catch (error) {
+    if (error?.code === 'title_history_unavailable') throw error;
     return fallbackResult(
       input,
       `error:${String(error?.message || error).slice(0, 120)}`,
@@ -387,12 +435,59 @@ async function runTitleFeedbackLoop(input = {}, dependencies = {}) {
   }
 }
 
+async function regenerateTitleAfterConflict(input = {}, conflictContext = {}, dependencies = {}) {
+  const generateCandidates = dependencies.generateCandidates || generateTitleCandidates;
+  const recoveryInput = {
+    ...input,
+    recoveryConflictTitle: String(conflictContext?.conflictTitle || '').trim(),
+    recoveryConflictReason: String(conflictContext?.conflictReason || '').trim(),
+  };
+  const generated = await generateCandidates(recoveryInput);
+  const rejectedCandidates = [];
+  const candidates = normalizeCandidates(generated, { ...recoveryInput, baseTitle: '' })
+    .filter((title) => {
+      const validation = validateTitleCandidate(title, recoveryInput);
+      if (validation.passed) return true;
+      rejectedCandidates.push({ title, reasons: validation.reasons });
+      return false;
+    });
+  const title = candidates[0] || '';
+  if (!title) {
+    return {
+      blocked: true,
+      title: '',
+      content: input.content || '',
+      metadata: {
+        title_candidates: [],
+        title_rejected_candidates: rejectedCandidates,
+        title_selected_reason: 'blocked_invalid_regenerated_title',
+      },
+    };
+  }
+  return {
+    title,
+    content: replaceTitleLine(input.content, title),
+    metadata: {
+      title_candidates: [{
+        title,
+        score: 0,
+        features: Object.entries(extractTitleFeatures(title))
+          .filter(([, enabled]) => enabled)
+          .map(([key]) => key),
+      }],
+      title_rejected_candidates: rejectedCandidates,
+      title_selected_reason: `single_title_regeneration:${recoveryInput.recoveryConflictReason || 'history_overlap'}`,
+    },
+  };
+}
+
 module.exports = {
   buildTitleCandidatePrompt,
   extractTitleFeatures,
   generateTitleCandidates,
   loadTitleCorrelationProfile,
   normalizeCandidates,
+  regenerateTitleAfterConflict,
   replaceTitleLine,
   runTitleFeedbackLoop,
   selectTitleCandidate,

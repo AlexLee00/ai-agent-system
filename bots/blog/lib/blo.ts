@@ -85,8 +85,16 @@ const {
   repairTerminalQualityArtifacts,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
-const { runTitleFeedbackLoop }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/title-feedback-loop.ts'));
-const { assertFinalGeneralTitle }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/final-title-guard.ts'));
+const {
+  regenerateTitleAfterConflict,
+  replaceTitleLine,
+  runTitleFeedbackLoop,
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/title-feedback-loop.ts'));
+const {
+  buildTitleGuardEventDetails,
+  loadTitleHistorySnapshot,
+  resolveFinalGeneralTitle,
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/final-title-guard.ts'));
 const { buildBookReviewTitleCandidate }              = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/book-review-title.ts'));
 const { buildContentHarnessReport }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/content-harness.ts'));
 const { resolveBlogWriterAssignment }               = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
@@ -1237,8 +1245,8 @@ async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail, opt
   }, { postType: eventDetail?.type || postData?.postType || 'unknown', dryRun: !!options.dryRun });
 }
 
-async function _applyGeneralTitleFeedback(post, context, options = {}) {
-  const titleResult = await runTitleFeedbackLoop({
+function _buildGeneralTitleFeedbackInput(post, context) {
+  return {
     category: context?.category || '',
     baseTitle: post?.title || `[${context?.category || '일반'}] 오늘의 포스팅`,
     topic: context?.topicHint || context?.researchData?.topic_hint || context?.researchData?.topic_title_candidate || '',
@@ -1246,9 +1254,45 @@ async function _applyGeneralTitleFeedback(post, context, options = {}) {
     expectedTitlePattern: context?.researchData?.strategy_preferred_pattern || '',
     content: post?.content || '',
     requiredPhrase: context?.category === '도서리뷰' ? String(context?.book_info?.title || '').trim() : '',
-  }, options.titleFeedbackDependencies || {});
+  };
+}
+
+async function _applyGeneralTitleFeedback(post, context, options = {}) {
+  const feedbackInput = _buildGeneralTitleFeedbackInput(post, context);
+  const dependencies = { ...(options.titleFeedbackDependencies || {}) };
+  if (!dependencies.assertDistinctTitle && !dependencies.historySnapshot) {
+    try {
+      dependencies.historySnapshot = await loadTitleHistorySnapshot(
+        options.titleHistoryDependencies || options.finalTitleGuardDependencies || {},
+      );
+    } catch (error) {
+      if (error?.code === 'title_history_unavailable') {
+        error.details = {
+          ...error.details,
+          attemptedTitle: feedbackInput.baseTitle,
+          candidateCount: 0,
+          selectedReason: 'title_history_unavailable',
+        };
+      }
+      throw error;
+    }
+  }
+  const titleResult = await runTitleFeedbackLoop(
+    feedbackInput,
+    dependencies,
+  );
   if (titleResult.blocked) {
-    throw new Error(`일반 포스팅 제목 중복 차단: ${titleResult.metadata?.title_selected_reason || 'candidate_exhausted'}`);
+    const error = new Error(`일반 포스팅 제목 중복 차단: ${titleResult.metadata?.title_selected_reason || 'candidate_exhausted'}`);
+    error.code = titleResult.titleGuardDetails?.matchedPredicate ? 'final_title_overlap' : 'title_candidates_exhausted';
+    error.details = titleResult.titleGuardDetails || {
+      attemptedTitle: feedbackInput.baseTitle,
+      conflictTitle: null,
+      conflictSource: null,
+      matchedPredicate: null,
+      candidateCount: 0,
+      selectedReason: titleResult.metadata?.title_selected_reason || 'candidate_exhausted',
+    };
+    throw error;
   }
   post.title = titleResult.title;
   post.content = titleResult.content;
@@ -1641,11 +1685,57 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   }
 
   const titleFeedbackMetadata = await _applyGeneralTitleFeedback(post, context, options);
-  const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
-  const finalTitleGuard = await assertFinalGeneralTitle(genTitle, {
-    ...(options.finalTitleGuardDependencies || {}),
-    category: context.category,
+  const selectedTitle = post.title || `[${context.category}] 오늘의 포스팅`;
+  const titleCandidates = (titleFeedbackMetadata?.title_candidates || []).map((candidate) => candidate?.title);
+  const finalTitleResolution = await resolveFinalGeneralTitle({
+    title: selectedTitle,
+    candidateTitles: titleCandidates,
+    candidateCount: titleCandidates.length,
+    selectedReason: titleFeedbackMetadata?.title_selected_reason || 'title_feedback_selection',
+    guardOptions: {
+      ...(options.finalTitleGuardDependencies || {}),
+      category: context.category,
+    },
+    regenerateTitle: async (conflictContext) => regenerateTitleAfterConflict(
+      _buildGeneralTitleFeedbackInput(post, context),
+      conflictContext,
+      {
+        generateCandidates: options.titleFeedbackDependencies?.generateCandidates,
+      },
+    ),
+    onRecovered: async (detail) => _emitEvent('title_guard_recovered', {
+      type: 'general',
+      traceId: traceCtx.trace_id,
+      ...detail,
+    }),
   });
+  const finalTitleGuard = finalTitleResolution.guard;
+  const genTitle = finalTitleResolution.title;
+  if (genTitle !== post.title) {
+    post.title = genTitle;
+    post.content = replaceTitleLine(post.content || '', genTitle);
+    post.charCount = post.content.length;
+  }
+  const regeneratedMetadata = finalTitleResolution.regeneratedResult?.metadata;
+  const candidateMetadata = [
+    ...(regeneratedMetadata?.title_candidates || []),
+    ...(titleFeedbackMetadata?.title_candidates || []),
+  ];
+  const seenCandidateTitles = new Set();
+  titleFeedbackMetadata.title_candidates = [
+    ...candidateMetadata.filter((candidate) => candidate?.title === genTitle),
+    ...candidateMetadata.filter((candidate) => candidate?.title !== genTitle),
+  ].filter((candidate) => {
+    const title = String(candidate?.title || '').trim();
+    if (!title || seenCandidateTitles.has(title)) return false;
+    seenCandidateTitles.add(title);
+    return true;
+  });
+  titleFeedbackMetadata.title_rejected_candidates = [
+    ...(titleFeedbackMetadata?.title_rejected_candidates || []),
+    ...(regeneratedMetadata?.title_rejected_candidates || []),
+  ];
+  titleFeedbackMetadata.title_selected_reason = finalTitleResolution.selectedReason;
   let homeFeedReport = null;
   let humanizeShadow = null;
 
@@ -2390,7 +2480,12 @@ async function _runGeneralStage(daily, traceCtx, options = {}) {
     if (scheduleId && !options.dryRun) {
       await updateScheduleStatus(scheduleId, 'scheduled');
     }
-    await _emitEvent('post_failed', { type: 'general', error: e.message, traceId: traceCtx.trace_id });
+    await _emitEvent('post_failed', {
+      type: 'general',
+      error: e.message,
+      traceId: traceCtx.trace_id,
+      ...buildTitleGuardEventDetails(e),
+    });
     return { type: 'general', error: e.message };
   }
 }

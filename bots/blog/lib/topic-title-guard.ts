@@ -100,8 +100,8 @@ type TitleCandidate = string | {
   category?: string;
 };
 
-function isTooCloseToRecentTitle(candidate: TitleCandidate, recentTitles: string[] = []) {
-  if (!recentTitles.length) return false;
+function findRecentTitleConflict(candidate: TitleCandidate, recentTitles: string[] = []) {
+  if (!recentTitles.length) return null;
 
   const title = typeof candidate === 'string' ? candidate : String(candidate?.title || '');
   const topic = typeof candidate === 'string' ? '' : String(candidate?.topic || '');
@@ -113,20 +113,32 @@ function isTooCloseToRecentTitle(candidate: TitleCandidate, recentTitles: string
   const candidateFrames = new Set(extractStructuralFrames(title));
   const candidateLeading = leadingTokenSignature(title);
 
-  if (recentTitles.some((recentTitle) => similarity(recentTitle, title) > 0.4)) {
-    return true;
+  const generalSimilarityIndex = recentTitles.findIndex((recentTitle) => similarity(recentTitle, title) > 0.4);
+  if (generalSimilarityIndex >= 0) {
+    return {
+      conflictTitle: recentTitles[generalSimilarityIndex],
+      historyIndex: generalSimilarityIndex,
+      matchedPredicate: 'all_history_bigram_similarity_gt_0.40',
+    };
   }
 
   if (latestRecentTitle) {
     const latestSimilarity = similarity(latestRecentTitle, title);
     const latestTokenOverlap = tokenOverlapRatio(latestRecentTitle, title);
     const topicOverlap = tokenOverlapRatio(latestRecentTitle, topic);
-    if (latestSimilarity >= 0.28) return true;
-    if (latestTokenOverlap >= 0.45) return true;
-    if (topicOverlap >= 0.5) return true;
+    if (latestSimilarity >= 0.28) {
+      return { conflictTitle: latestRecentTitle, historyIndex: 0, matchedPredicate: 'latest_bigram_similarity_gte_0.28' };
+    }
+    if (latestTokenOverlap >= 0.45) {
+      return { conflictTitle: latestRecentTitle, historyIndex: 0, matchedPredicate: 'latest_token_overlap_gte_0.45' };
+    }
+    if (topicOverlap >= 0.5) {
+      return { conflictTitle: latestRecentTitle, historyIndex: 0, matchedPredicate: 'latest_topic_overlap_gte_0.50' };
+    }
   }
 
-  return recentTitles.some((recentTitle) => {
+  for (let historyIndex = 0; historyIndex < recentTitles.length; historyIndex += 1) {
+    const recentTitle = recentTitles[historyIndex];
     const recentCategory = extractCategoryPrefix(recentTitle);
     const sameCategory = category && recentCategory && category === recentCategory;
     const titleTopicOverlap = tokenOverlapRatio(recentTitle, topic);
@@ -137,14 +149,27 @@ function isTooCloseToRecentTitle(candidate: TitleCandidate, recentTitles: string
     const sharedFrames = extractStructuralFrames(recentTitle).filter((frame) => candidateFrames.has(frame));
     const recentLeading = leadingTokenSignature(recentTitle);
 
-    if (titleTopicOverlap >= 0.34 || titleQuestionOverlap >= 0.34 || titleDiffOverlap >= 0.4) return true;
-    if (sameCategory && titleTokenOverlap >= 0.38) return true;
-    if (sameCategory && sharedStructure.length >= 2 && titleTokenOverlap >= 0.25) return true;
-    if (sameCategory && candidateLeading && recentLeading && candidateLeading === recentLeading) return true;
-    if (sameCategory && sharedStructure.includes('먼저 확인할') && titleTokenOverlap >= 0.2) return true;
-    if (sameCategory && sharedFrames.length > 0) return true;
-    return false;
-  });
+    const conflict = (matchedPredicate) => ({ conflictTitle: recentTitle, historyIndex, matchedPredicate });
+    if (titleTopicOverlap >= 0.34) return conflict('history_topic_overlap_gte_0.34');
+    if (titleQuestionOverlap >= 0.34) return conflict('history_question_overlap_gte_0.34');
+    if (titleDiffOverlap >= 0.4) return conflict('history_diff_overlap_gte_0.40');
+    if (sameCategory && titleTokenOverlap >= 0.38) return conflict('same_category_token_overlap_gte_0.38');
+    if (sameCategory && sharedStructure.length >= 2 && titleTokenOverlap >= 0.25) {
+      return conflict('same_category_shared_structure_token_overlap');
+    }
+    if (sameCategory && candidateLeading && recentLeading && candidateLeading === recentLeading) {
+      return conflict('same_category_leading_signature');
+    }
+    if (sameCategory && sharedStructure.includes('먼저 확인할') && titleTokenOverlap >= 0.2) {
+      return conflict('same_category_first_check_token_overlap');
+    }
+    if (sameCategory && sharedFrames.length > 0) return conflict('same_category_shared_frame');
+  }
+  return null;
+}
+
+function isTooCloseToRecentTitle(candidate: TitleCandidate, recentTitles: string[] = []) {
+  return Boolean(findRecentTitleConflict(candidate, recentTitles));
 }
 
 function mergeRecentTitles(...titleGroups: unknown[]): string[] {
@@ -171,6 +196,7 @@ module.exports = {
   tokenOverlapRatio,
   extractStructuralPhrases,
   extractStructuralFrames,
+  findRecentTitleConflict,
   isTooCloseToRecentTitle,
   mergeRecentTitles,
 };

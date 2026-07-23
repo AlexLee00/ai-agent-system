@@ -23,8 +23,17 @@ const {
 const { isBlogMarketingEnabled } = require('../lib/marketing-enabled.ts');
 const { normalizeExecutionDirectives } = require('../lib/strategy-loader.ts');
 const { buildBookReviewTitleCandidate } = require('../lib/book-review-title.ts');
-const { runTitleFeedbackLoop } = require('../lib/title-feedback-loop.ts');
-const { assertFinalGeneralTitle } = require('../lib/final-title-guard.ts');
+const {
+  regenerateTitleAfterConflict,
+  replaceTitleLine,
+  runTitleFeedbackLoop,
+} = require('../lib/title-feedback-loop.ts');
+const {
+  assertFinalGeneralTitle,
+  buildTitleGuardEventDetails,
+  buildTitleHistorySnapshot,
+  resolveFinalGeneralTitle,
+} = require('../lib/final-title-guard.ts');
 const { isTooCloseToRecentTitle } = require('../lib/topic-title-guard.ts');
 const { acquireEngagementLock, releaseEngagementLock } = require('../lib/engagement-process-lock.ts');
 const { trackWeeklyAutonomy } = require('../lib/autonomy-tracker.ts');
@@ -139,6 +148,27 @@ async function main() {
   });
   assert.equal(blockedFallback.blocked, true);
 
+  let unavailableGenerationCalls = 0;
+  await assert.rejects(
+    runTitleFeedbackLoop({
+      category: 'IT정보와분석',
+      baseTitle: '[IT정보와분석] 이력 장애 시 생성하지 않을 제목',
+      content: '[IT정보와분석] 이력 장애 시 생성하지 않을 제목\n본문',
+    }, {
+      generateCandidates: async () => {
+        unavailableGenerationCalls += 1;
+        return ['생성하면 안 되는 제목'];
+      },
+      loadDbTitleHistory: async () => ({ available: false, titles: [], error: 'db down' }),
+      loadOutputTitleHistory: () => ({ available: false, titles: [], error: 'output missing' }),
+    }),
+    (error) => (
+      error?.code === 'title_history_unavailable'
+      && error?.details?.attemptedTitle === '[IT정보와분석] 이력 장애 시 생성하지 않을 제목'
+    ),
+  );
+  assert.equal(unavailableGenerationCalls, 0);
+
   assert.equal(isTooCloseToRecentTitle(
     '[IT정보와분석] 배포 전 확인할 로그 7가지',
     [
@@ -170,6 +200,164 @@ async function main() {
   });
   assert.equal(degradedTitleGuard.degraded, true);
 
+  const latestTitle = '[자기계발] 집중이 흐트러질 때 책상을 바꾼 이유';
+  const olderStrictOnlyTitle = '[자기계발] 장애 대응 기록을 시간순으로 정리한 과정';
+  const singletonCandidate = '[IT정보와분석] 장애 대응 로그를 시간순으로 복원한 기록';
+  const singletonSnapshot = buildTitleHistorySnapshot({
+    available: true,
+    entries: [
+      { title: olderStrictOnlyTitle, observedAt: '2026-06-20T00:00:00+09:00' },
+      { title: latestTitle, observedAt: '2026-07-20T00:00:00+09:00' },
+    ],
+  }, { available: true, entries: [] });
+  assert.equal(singletonSnapshot.titles[0], latestTitle);
+  await assert.doesNotReject(assertFinalGeneralTitle(singletonCandidate, {
+    historySnapshot: singletonSnapshot,
+  }));
+
+  const post284Title = '[성장과성공] 스타트업에서 흔들리지 않는 목표 세우기 — 일이 바뀔 때마다 방향을 잡는 3가지 기준';
+  const selectedTitle = '[성장과성공] 흔들리지 않는 목표 3가지 기준';
+  const alternateTitle = '[성장과성공] 목표 세우기 기록을 7일 실험으로 바꾼 결과';
+  const secondAlternateTitle = '[성장과성공] 흔들리지 않는 목표 기록 2주 회고 사례';
+  const conflictingAlternateOne = '[성장과성공] 목표를 다시 세우는 4가지 기준';
+  const conflictingAlternateTwo = '[성장과성공] 흔들릴 때 목표를 점검하는 5가지 방법';
+  const titleBody = '첫 문단은 이미 품질 검증을 마친 본문입니다.\n둘째 문단도 제목 회복 중에는 바뀌면 안 됩니다.';
+  const titleContent = `${selectedTitle}\n${titleBody}`;
+  const earlySnapshot = buildTitleHistorySnapshot(
+    { available: true, entries: [] },
+    { available: true, entries: [] },
+  );
+  const post284Snapshot = buildTitleHistorySnapshot({
+    available: true,
+    entries: [{ title: post284Title, observedAt: '2026-06-27T09:00:00+09:00' }],
+  }, { available: true, entries: [] });
+  const recoveryInput = {
+    category: '성장과성공',
+    baseTitle: selectedTitle,
+    topic: '흔들리지 않는 목표 세우기',
+    topicTitleCandidate: '흔들리지 않는 목표 세우기',
+    content: titleContent,
+  };
+  const historyBlockedLoop = await runTitleFeedbackLoop(recoveryInput, {
+    historySnapshot: post284Snapshot,
+    generateCandidates: async () => [],
+    loadCorrelationProfile: async () => ({ eligible_features: [] }),
+  });
+  assert.equal(historyBlockedLoop.blocked, true);
+  assert.equal(historyBlockedLoop.titleGuardDetails.attemptedTitle, selectedTitle);
+  assert.equal(historyBlockedLoop.titleGuardDetails.conflictTitle, post284Title);
+  assert.equal(historyBlockedLoop.titleGuardDetails.conflictSource, 'db');
+  assert.ok(historyBlockedLoop.titleGuardDetails.matchedPredicate);
+
+  const titleLoopBeforePost284 = await runTitleFeedbackLoop(recoveryInput, {
+    historySnapshot: earlySnapshot,
+    generateCandidates: async () => [alternateTitle, secondAlternateTitle],
+    loadCorrelationProfile: async () => ({
+      sample_size: 20,
+      eligible_features: ['has_number'],
+      features: { has_number: { delta: 1 } },
+    }),
+  });
+  assert.equal(titleLoopBeforePost284.title, selectedTitle);
+  const validatedCandidates = titleLoopBeforePost284.metadata.title_candidates.map((candidate) => candidate.title);
+
+  let alternateRegenerationCalls = 0;
+  let alternateRecoveryEvent = null;
+  const alternateResolution = await resolveFinalGeneralTitle({
+    title: titleLoopBeforePost284.title,
+    candidateTitles: validatedCandidates,
+    candidateCount: validatedCandidates.length,
+    selectedReason: titleLoopBeforePost284.metadata.title_selected_reason,
+    historySnapshot: post284Snapshot,
+    regenerateTitle: async () => {
+      alternateRegenerationCalls += 1;
+      return null;
+    },
+    onRecovered: async (detail) => { alternateRecoveryEvent = detail; },
+  });
+  assert.equal(alternateResolution.title, alternateTitle);
+  assert.equal(alternateResolution.guardAttempts, 2);
+  assert.equal(alternateRegenerationCalls, 0);
+  assert.equal(replaceTitleLine(titleContent, alternateResolution.title).split('\n').slice(1).join('\n'), titleBody);
+  assert.deepEqual(Object.keys(alternateRecoveryEvent).sort(), [
+    'attemptedTitle',
+    'candidateCount',
+    'conflictSource',
+    'conflictTitle',
+    'matchedPredicate',
+    'selectedReason',
+  ]);
+
+  let regenerationCalls = 0;
+  let regenerationContext = null;
+  let regenerationGeneratorInput = null;
+  const regenerationResolution = await resolveFinalGeneralTitle({
+    title: selectedTitle,
+    candidateTitles: [selectedTitle, conflictingAlternateOne, conflictingAlternateTwo],
+    candidateCount: 3,
+    selectedReason: 'fixture_post_284_initial_selection',
+    historySnapshot: post284Snapshot,
+    regenerateTitle: async (conflictContext) => {
+      regenerationCalls += 1;
+      regenerationContext = conflictContext;
+      return regenerateTitleAfterConflict(recoveryInput, conflictContext, {
+        generateCandidates: async (generatorInput) => {
+          regenerationGeneratorInput = generatorInput;
+          return [alternateTitle];
+        },
+        historySnapshot: post284Snapshot,
+        loadCorrelationProfile: async () => ({ eligible_features: [] }),
+      });
+    },
+  });
+  assert.equal(regenerationResolution.title, alternateTitle);
+  assert.equal(regenerationResolution.guardAttempts, 4);
+  assert.equal(regenerationCalls, 1);
+  assert.equal(regenerationContext.conflictTitle, post284Title);
+  assert.ok(regenerationContext.conflictReason);
+  assert.equal(regenerationGeneratorInput.recoveryConflictTitle, post284Title);
+  assert.equal(regenerationGeneratorInput.recoveryConflictReason, regenerationContext.conflictReason);
+  assert.equal(alternateRecoveryEvent.conflictTitle, post284Title);
+  assert.equal(alternateRecoveryEvent.conflictSource, 'db');
+  assert.equal(alternateRecoveryEvent.attemptedTitle, selectedTitle);
+  assert.ok(alternateRecoveryEvent.matchedPredicate);
+  assert.equal(alternateRecoveryEvent.candidateCount, 3);
+  assert.equal(replaceTitleLine(titleContent, regenerationResolution.title).split('\n').slice(1).join('\n'), titleBody);
+
+  let exhaustedRegenerationCalls = 0;
+  await assert.rejects(
+    resolveFinalGeneralTitle({
+      title: selectedTitle,
+      candidateTitles: [selectedTitle, conflictingAlternateOne, conflictingAlternateTwo],
+      candidateCount: 3,
+      selectedReason: 'fixture_post_284_all_exhausted',
+      historySnapshot: post284Snapshot,
+      regenerateTitle: async (conflictContext) => {
+        exhaustedRegenerationCalls += 1;
+        return regenerateTitleAfterConflict(recoveryInput, conflictContext, {
+          generateCandidates: async () => ['흔들리지 않는 목표 6가지 기준'],
+          historySnapshot: post284Snapshot,
+          loadCorrelationProfile: async () => ({ eligible_features: [] }),
+        });
+      },
+    }),
+    (error) => {
+      assert.equal(error?.code, 'final_title_overlap');
+      assert.equal(error?.details?.guardAttempts, 4);
+      assert.equal(error?.details?.regenerationAttempts, 1);
+      assert.deepEqual(Object.keys(buildTitleGuardEventDetails(error)).sort(), [
+        'attemptedTitle',
+        'candidateCount',
+        'conflictSource',
+        'conflictTitle',
+        'matchedPredicate',
+        'selectedReason',
+      ]);
+      return true;
+    },
+  );
+  assert.equal(exhaustedRegenerationCalls, 1);
+
   const commenterSource = fs.readFileSync(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter.ts'), 'utf8');
   assert.match(commenterSource, /getTodaySympathyCount/);
   assert.match(commenterSource, /neighbor_comment_sympathy[\s\S]*neighbor_sympathy/);
@@ -199,6 +387,11 @@ async function main() {
     titleFallback: validCandidateFallback.title,
     blockedDuplicateFallback: blockedFallback.blocked,
     titleHistoryFailClosed: true,
+    finalTitleRecovery: {
+      alternate: alternateResolution.title,
+      regenerated: regenerationResolution.title,
+      exhaustedFailClosed: true,
+    },
   }, null, 2));
 }
 
