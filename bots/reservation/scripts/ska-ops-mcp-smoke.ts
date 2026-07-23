@@ -41,7 +41,8 @@ function createQueryReadonlyMock() {
       }
       if (/FROM reservations/i.test(sql) && /COUNT\(\*\)/i.test(sql)) {
         if (/AS blank_dates/i.test(sql)) {
-          return [{ null_dates: 0, blank_dates: 6, malformed_dates: 0 }];
+          assert.match(sql, /COALESCE\(seen_only, 0\) = 0/);
+          return [{ null_dates: 0, blank_dates: 6, malformed_dates: 0, null_seen_markers: 4 }];
         }
         return [{ count: 1 }];
       }
@@ -174,6 +175,7 @@ async function main() {
   assert.equal(runtime.historicalRaw.scheduledCollector, false);
   assert.equal(runtime.dataHygiene.blankDates, 6);
   assert.equal(runtime.dataHygiene.malformedDates, 0);
+  assert.equal(runtime.dataHygiene.nullSeenMarkers, 4);
 
   const { server, port } = await startServer({ port: 0, deps });
   try {

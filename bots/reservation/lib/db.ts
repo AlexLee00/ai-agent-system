@@ -83,8 +83,8 @@ async function markSeen(id) {
       "UPDATE reservations SET marked_seen=1, updated_at=to_char(now(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$1", [id]);
   } else {
     await pgPool.run(SCHEMA,
-      'INSERT INTO reservations(id, date, start_time, seen_only) VALUES($1,$2,$3,1) ON CONFLICT DO NOTHING',
-      [id, '', '']);
+      'INSERT INTO reservations(id, date, start_time, seen_only) VALUES($1,NULL,NULL,1) ON CONFLICT DO NOTHING',
+      [id]);
   }
 }
 

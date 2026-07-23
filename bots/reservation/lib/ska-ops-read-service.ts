@@ -360,16 +360,27 @@ async function buildSkaRuntimeContractStatus(args = {}, deps = {}) {
     nullDates: 0,
     blankDates: 0,
     malformedDates: 0,
+    nullSeenMarkers: 0,
   };
   try {
     const rows = await queryReadonly('reservation', `
       SELECT
-        COUNT(*) FILTER (WHERE date IS NULL)::int AS null_dates,
-        COUNT(*) FILTER (WHERE date IS NOT NULL AND BTRIM(date::text) = '')::int AS blank_dates,
         COUNT(*) FILTER (
-          WHERE NULLIF(BTRIM(date::text), '') IS NOT NULL
+          WHERE COALESCE(seen_only, 0) = 0 AND date IS NULL
+        )::int AS null_dates,
+        COUNT(*) FILTER (
+          WHERE COALESCE(seen_only, 0) = 0
+            AND date IS NOT NULL
+            AND BTRIM(date::text) = ''
+        )::int AS blank_dates,
+        COUNT(*) FILTER (
+          WHERE COALESCE(seen_only, 0) = 0
+            AND NULLIF(BTRIM(date::text), '') IS NOT NULL
             AND BTRIM(date::text) !~ '^\\d{4}-\\d{2}-\\d{2}$'
-        )::int AS malformed_dates
+        )::int AS malformed_dates,
+        COUNT(*) FILTER (
+          WHERE seen_only = 1 AND date IS NULL
+        )::int AS null_seen_markers
       FROM reservations
     `);
     dataHygiene = {
@@ -377,6 +388,7 @@ async function buildSkaRuntimeContractStatus(args = {}, deps = {}) {
       nullDates: Number(rows[0]?.null_dates || 0),
       blankDates: Number(rows[0]?.blank_dates || 0),
       malformedDates: Number(rows[0]?.malformed_dates || 0),
+      nullSeenMarkers: Number(rows[0]?.null_seen_markers || 0),
     };
   } catch (_error) {
     dataHygiene = {
