@@ -29,6 +29,7 @@ function writeProposal(dir: string, data: Record<string, unknown>) {
 
 async function main() {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'darwin-success-predicate-'));
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'darwin-success-predicate-outside-'));
   const proposalDir = path.join(tmpRoot, 'docs/research/proposals');
   fs.mkdirSync(proposalDir, { recursive: true });
 
@@ -52,10 +53,38 @@ async function main() {
       ...validPredicate(3),
       assertions: [{ name: 'unsafe', command: 'git push origin main', expect: { exitCode: 0 } }, ...validPredicate(2).assertions],
     }).ok, false);
+    for (const unsafeCommand of [
+      'printf ok; curl https://example.invalid',
+      'node -e "require(\'fs\').rmSync(\'/tmp/unsafe\')"',
+      'python /path/to/generated_check.py',
+      'node ../outside-lab.js',
+      'node scripts/deploy-production.js',
+      'npm run runtime:apply-migration',
+      'npm run deploy',
+      'tsx bots/darwin/scripts/darwin-weekly-review.ts',
+    ]) {
+      assert.strictEqual(predicate.validateSuccessPredicate({
+        ...validPredicate(3),
+        assertions: [{ name: 'unsafe', command: unsafeCommand, expect: { exitCode: 0 } }, ...validPredicate(2).assertions],
+      }).ok, false, `must reject unsafe predicate command: ${unsafeCommand}`);
+    }
 
-    const pass = predicate.runSuccessPredicate(validPredicate(3), { cwd: tmpRoot });
+    const pass = predicate.runSuccessPredicate(validPredicate(3), { cwd: tmpRoot, verifyLab: false });
     assert.strictEqual(pass.ok, true);
     assert.strictEqual(pass.assertionResults.length, 3);
+    assert.strictEqual(predicate.runSuccessPredicate(validPredicate(3), { cwd: tmpRoot }).failureReason, 'lab_cwd_required');
+
+    fs.writeFileSync(path.join(outsideRoot, 'outside.js'), 'module.exports = true;\n', 'utf8');
+    fs.symlinkSync(path.join(outsideRoot, 'outside.js'), path.join(tmpRoot, 'linked-outside.js'));
+    const escaped = predicate.runSuccessPredicate({
+      ...validPredicate(3),
+      assertions: [
+        { name: 'escaped', command: 'node --check linked-outside.js', expect: { exitCode: 0 } },
+        ...validPredicate(2).assertions,
+      ],
+    }, { cwd: tmpRoot, verifyLab: false });
+    assert.strictEqual(escaped.ok, false);
+    assert.strictEqual(escaped.assertionResults[0].error, 'command_path_outside_lab');
 
     const fail = predicate.runSuccessPredicate({
       ...validPredicate(3),
@@ -63,7 +92,7 @@ async function main() {
         { name: 'fail', command: 'printf nope', expect: { stdoutIncludes: 'ok' } },
         ...validPredicate(2).assertions,
       ],
-    }, { cwd: tmpRoot });
+    }, { cwd: tmpRoot, verifyLab: false });
     assert.strictEqual(fail.ok, false);
     assert.strictEqual(fail.assertionResults[0].error, 'stdout_mismatch');
 
@@ -75,6 +104,7 @@ async function main() {
       id: 'proposal-measured',
       status: 'implementing',
       created_at: '2026-07-05T00:00:00.000Z',
+      successPredicate: validPredicate(3),
     });
     const measured = store.transitionProposal('proposal-measured', 'measured', {
       reason: 'predicate_passed',
@@ -93,6 +123,7 @@ async function main() {
     delete require.cache[predicatePath];
     delete require.cache[storePath];
     fs.rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(outsideRoot, { recursive: true, force: true });
   }
 }
 

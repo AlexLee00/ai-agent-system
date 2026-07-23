@@ -18,6 +18,10 @@ function git(args: string[], cwd = repoRoot): string {
 }
 
 async function main() {
+  if (process.env.DARWIN_HARD_SMOKE_ENABLED !== 'true') {
+    console.log(JSON.stringify({ ok: true, skipped: true, reason: 'darwin_hard_smoke_disabled' }));
+    return;
+  }
   const rootBranches: string[] = [];
   const recordRoot = (label: string) => {
     const branch = git(['branch', '--show-current']);

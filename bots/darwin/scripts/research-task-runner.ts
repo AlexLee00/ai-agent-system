@@ -2,12 +2,8 @@
 
 const tasks = require('../lib/research-tasks');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
-const { execFileSync } = require('child_process');
-const path = require('path');
 const autonomyLevel = require('../lib/autonomy-level');
 const { assertOpsRootOnMain } = require('../lib/ops-root-guard');
-
-type ExecFileOptions = Omit<import('child_process').ExecFileSyncOptionsWithStringEncoding, 'encoding'>;
 
 interface AlarmPayload {
   message: string;
@@ -70,7 +66,6 @@ const tasksTyped: TaskModule = tasks;
 const autonomyLevelTyped: AutonomyLevelModule = autonomyLevel;
 
 const MAX_TASKS_PER_RUN = 3;
-const REPO_ROOT = path.join(__dirname, '../../..');
 
 function parseArgs(argv: string[]): RunnerOptions {
   return {
@@ -89,28 +84,6 @@ function toErrorMessage(error: unknown): string {
     return String(maybe.stderr || maybe.stdout || maybe.message || maybe.stack || 'unknown error');
   }
   return String(error || 'unknown error');
-}
-
-function _runGit(args: string[], opts: ExecFileOptions = {}): string {
-  return execFileSync('git', args, {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    ...opts,
-  }).trim();
-}
-
-function _autoMergeSkillBranch(branchName: string | null | undefined, taskId: string): { merged: boolean; branch?: string } {
-  if (!branchName) return { merged: false };
-  const guard = assertOpsRootOnMain({ context: `research-task-runner:auto-merge:${taskId}` });
-  if (!guard.ok) throw new Error(`ops_root_not_main:${guard.branch}`);
-  _runGit(['merge', '--no-ff', branchName, '-m', `merge(darwin-skill): ${taskId}`]);
-  try {
-    _runGit(['branch', '-D', branchName]);
-  } catch {
-    // ignore
-  }
-  return { merged: true, branch: branchName };
 }
 
 async function runMain() {
@@ -196,22 +169,12 @@ async function runMain() {
 
       if (task.type === 'skill_creation') {
         const result = await tasksTyped.executeSkillCreation(task);
-        const requiresApproval = autonomyLevelTyped.requiresApproval();
-        let autoMerge = null;
-
-        if (result.syntaxOk && result.branch && !requiresApproval) {
-          autoMerge = _autoMergeSkillBranch(result.branch, task.id);
-          if (autoMerge?.merged) summary.gitMutations += 1;
-        }
 
         await postAlarm({
-          message: `🧠 스킬 자동 생성 ${result.syntaxOk ? '✅' : '❌'}!\n📋 ${task.title}\n📂 ${result.skillPath}\n📊 ${result.linesOfCode}줄\n✅ 문법: ${result.syntaxOk ? '통과' : '실패'}\n${autoMerge?.merged ? '🚀 L5 자동 머지 완료' : (result.branch ? `🌿 검증 브랜치: ${result.branch}` : '')}`,
+          message: `🧠 스킬 자동 생성 ${result.syntaxOk ? '✅' : '❌'}!\n📋 ${task.title}\n📂 ${result.skillPath}\n📊 ${result.linesOfCode}줄\n✅ 문법: ${result.syntaxOk ? '통과' : '실패'}\n${result.branch ? `🌿 검증 브랜치: ${result.branch}` : ''}`,
           team: 'darwin',
           fromBot: 'task-runner',
-          inlineKeyboard: result.syntaxOk && requiresApproval ? [[
-            { text: '✅ 머지 승인', callback_data: `darwin_merge_skill:${task.id}` },
-            { text: '📝 수동 검토', callback_data: `darwin_manual:${task.id}` },
-          ]] : null,
+          inlineKeyboard: null,
         } as AlarmPayload);
         summary.alarmSent += 1;
         summary.executed += 1;

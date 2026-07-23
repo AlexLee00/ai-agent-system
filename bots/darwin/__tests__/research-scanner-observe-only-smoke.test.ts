@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
 const Module = require('module');
 const path = require('path');
 
@@ -119,6 +120,8 @@ async function main() {
     assert.strictEqual(registryRuns, 2);
     assert.strictEqual(storedMetrics.length, 1);
     assert.deepStrictEqual(forbiddenCalls, []);
+    const dailyPlist = fs.readFileSync(path.join(__dirname, '../launchd/ai.research.scanner.plist'), 'utf8');
+    assert.match(dailyPlist, /<string>--observe-only<\/string>/, 'daily scanner must never run the weekly proposal/apply path');
 
     console.log('✅ darwin research scanner observe-only smoke ok');
   } finally {

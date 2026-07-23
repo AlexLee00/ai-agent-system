@@ -117,6 +117,7 @@ function evaluateAdoptCandidate(proposal: ProposalRecord, patterns = readDenylis
   let blockedReason: string | null = null;
   if (proposalStore.normalizeProposalState(proposal.status) !== 'measured') blockedReason = 'not_measured';
   else if (!proposal.branch) blockedReason = 'branch_missing';
+  else if (changedFiles.length === 0) blockedReason = 'changed_files_missing';
   else if (predicateResults.length === 0 || predicateResults.some((item) => item.ok !== true)) blockedReason = 'predicate_not_all_passed';
   else if (!budgetWithin(proposal)) blockedReason = 'budget_exceeded';
   else if (denylistMatches.length > 0) blockedReason = 'denylist_match';
@@ -182,6 +183,79 @@ function createAdoptBranchName(proposalId: string): string {
   return `darwin-adopt/${String(proposalId || 'unknown').replace(/[^A-Za-z0-9._/-]+/g, '-').slice(0, 96)}`;
 }
 
+function passField(value: unknown): boolean {
+  if (value === true) return true;
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return record.ok === true || record.pass === true || ['pass', 'passed', 'ok', 'success'].includes(String(record.status || '').toLowerCase());
+}
+
+function buildClaudeQualityGateInput(candidate: AdoptCandidate, pr: Record<string, unknown>) {
+  const proposal = candidate.proposal;
+  const syntaxChecks = asArray(proposal.syntax_checks)
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+  const verification = proposal.verification_report && typeof proposal.verification_report === 'object'
+    ? proposal.verification_report as Record<string, unknown>
+    : {};
+  const builderOk = proposal.syntax_passed === true
+    && syntaxChecks.length > 0
+    && syntaxChecks.every((item) => item.ok === true);
+  const reviewerOk = ['syntax', 'style', 'diff'].every((key) => passField(verification[key]));
+  const guardianOk = passField(verification.security) && candidate.denylistMatches.length === 0;
+  return {
+    prNumber: pr.number,
+    files: candidate.changedFiles,
+    builder: { ok: builderOk, checks: syntaxChecks.length },
+    reviewer: { ok: reviewerOk },
+    guardian: { ok: guardianOk },
+    test_runner: {
+      ok: candidate.predicateResults.length > 0 && candidate.predicateResults.every((item) => item.ok === true),
+      total: candidate.predicateResults.length,
+      failed: candidate.predicateResults.filter((item) => item.ok !== true).length,
+    },
+    task: {
+      id: proposal.id,
+      files: candidate.changedFiles,
+      prNumber: pr.number,
+    },
+  };
+}
+
+function qualityGateOutput(raw: unknown): Record<string, unknown> {
+  let current = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  for (const key of ['result', 'output', 'score']) {
+    const nested = current[key];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const record = nested as Record<string, unknown>;
+      if (record.status || record.verdict || record.pass !== undefined) return qualityGateOutput(record);
+    }
+  }
+  return current;
+}
+
+function isClaudeQualityGateApproved(raw: unknown): boolean {
+  const root = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const output = qualityGateOutput(root);
+  return root.ok !== false
+    && output.ok !== false
+    && output.pass === true
+    && output.status === 'promotion_ready'
+    && output.verdict === 'approve_candidate';
+}
+
+function validateActualAdoptDiff(candidate: AdoptCandidate, actualFiles: string[]) {
+  const actual = Array.from(new Set(actualFiles.map(normalizeFile).filter(Boolean))).sort();
+  const denylistMatches = findDenylistMatches(actual);
+  if (denylistMatches.length > 0) {
+    return { ok: false, reason: 'actual_diff_denylist_match', actualFiles: actual, denylistMatches };
+  }
+  const expected = [...candidate.changedFiles].map(normalizeFile).filter(Boolean).sort();
+  if (actual.length !== expected.length || actual.some((file, index) => file !== expected[index])) {
+    return { ok: false, reason: 'actual_diff_metadata_mismatch', actualFiles: actual, expectedFiles: expected, denylistMatches: [] };
+  }
+  return { ok: true, reason: null, actualFiles: actual, expectedFiles: expected, denylistMatches: [] };
+}
+
 async function callClaudeQualityGate(
   candidate: AdoptCandidate,
   pr: Record<string, unknown>,
@@ -202,23 +276,7 @@ async function callClaudeQualityGate(
     const scoreRes = await fetchFn(`${baseUrl}/tools/quality_gate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        prNumber: pr.number,
-        files: candidate.changedFiles,
-        builder: { ok: true },
-        reviewer: { ok: true },
-        guardian: { ok: true },
-        test_runner: {
-          ok: true,
-          total: candidate.predicateResults.length,
-          failed: candidate.predicateResults.filter((item) => item.ok !== true).length,
-        },
-        task: {
-          id: candidate.proposal.id,
-          files: candidate.changedFiles,
-          prNumber: pr.number,
-        },
-      }),
+      body: JSON.stringify(buildClaudeQualityGateInput(candidate, pr)),
       signal: AbortSignal.timeout(8000),
     });
     const score = await scoreRes.json();
@@ -253,6 +311,7 @@ async function runAdoptForCandidate(
     createPR?: typeof gitOps.createPR;
     pushHeadToBranch?: typeof gitOps.pushHeadToBranch;
     runGit?: typeof runGit;
+    qualityGate?: (candidate: AdoptCandidate, pr: Record<string, unknown>, prSpec: ReturnType<typeof buildPrSpec>) => Promise<Record<string, unknown>>;
   } = {}
 ) {
   const enabled = options.enabled === true || process.env.DARWIN_ADOPT_ENABLED === 'true';
@@ -273,28 +332,59 @@ async function runAdoptForCandidate(
   let prSpec: ReturnType<typeof buildPrSpec> | null = null;
   try {
     runGitFn(['cherry-pick', String(candidate.proposal.branch)], lab.path);
+    const actualFiles = String(runGitFn(['diff', '--name-only', 'main...HEAD'], lab.path) || '')
+      .split('\n')
+      .map((file) => file.trim())
+      .filter(Boolean);
+    const diffValidation = validateActualAdoptDiff(candidate, actualFiles);
+    if (!diffValidation.ok) {
+      return {
+        ok: false,
+        dryRun,
+        enabled,
+        blocked: true,
+        blockedReason: diffValidation.reason,
+        diffValidation,
+      };
+    }
     prSpec = buildPrSpec(candidate, branchName);
     if (dryRun) {
-      return { ok: true, dryRun: true, enabled, labPath: lab.path, prSpec, pr: null };
+      return { ok: true, dryRun: true, enabled, labPath: lab.path, prSpec, pr: null, diffValidation };
     }
     const pushHeadToBranch = options.pushHeadToBranch || gitOps.pushHeadToBranch;
     const createPR = options.createPR || gitOps.createPR;
     pushHeadToBranch(branchName, { cwd: lab.path, timeout: 120_000 });
     const pr = createPR(prSpec, { cwd: lab.path, timeout: 120_000 });
-    let claudeScoring = null;
+    let claudeScoring: Record<string, unknown> | null = null;
+    let adopted = false;
     if (pr?.ok === true) {
-      claudeScoring = await callClaudeQualityGate(candidate, pr, prSpec);
-      proposalStore.transitionProposal(candidate.proposal.id, 'adopted', {
-        reason: 'adopt_pr_opened',
-        adopted_via: 'darwin_adopt_pipeline',
-        pr_number: pr.number || null,
-        pr_url: pr.url || null,
-        pr_head: prSpec.head,
-        pr_base: prSpec.base,
-        claude_scoring: claudeScoring,
-      });
+      const qualityGate = options.qualityGate || callClaudeQualityGate;
+      claudeScoring = await qualityGate(candidate, pr, prSpec);
+      if (isClaudeQualityGateApproved(claudeScoring)) {
+        proposalStore.transitionProposal(candidate.proposal.id, 'adopted', {
+          reason: 'adopt_pr_opened_quality_approved',
+          adopted_via: 'darwin_adopt_pipeline',
+          pr_number: pr.number || null,
+          pr_url: pr.url || null,
+          pr_head: prSpec.head,
+          pr_base: prSpec.base,
+          actual_changed_files: diffValidation.actualFiles,
+          claude_scoring: claudeScoring,
+        });
+        adopted = true;
+      }
     }
-    return { ok: pr?.ok === true, dryRun: false, enabled, labPath: lab.path, prSpec, pr, claudeScoring };
+    return {
+      ok: pr?.ok === true,
+      adopted,
+      dryRun: false,
+      enabled,
+      labPath: lab.path,
+      prSpec,
+      pr,
+      diffValidation,
+      claudeScoring,
+    };
   } catch (error) {
     return {
       ok: false,
@@ -324,6 +414,9 @@ module.exports = {
   selectAdoptCandidates,
   buildPrSpec,
   createAdoptBranchName,
+  buildClaudeQualityGateInput,
+  isClaudeQualityGateApproved,
+  validateActualAdoptDiff,
   callClaudeQualityGate,
   runAdoptForCandidate,
 };

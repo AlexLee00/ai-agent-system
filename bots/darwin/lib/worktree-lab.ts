@@ -111,12 +111,19 @@ function createLab(branchName: string, options: LabOptions = {}): LabRecord {
 function removeLab(labPath: string, options: LabOptions = {}): { removed: boolean; pruned: boolean } {
   const repoRoot = options.repoRoot || env.PROJECT_ROOT;
   const runGit = options.runGit || defaultRunGit;
-  runGit(['worktree', 'remove', '--force', labPath], { cwd: repoRoot });
+  const labRoot = getLabRoot(options);
+  const resolved = path.resolve(labPath || '.');
+  if (resolved === labRoot) throw new Error(`lab_remove_root_forbidden:${resolved}`);
+  if (!resolved.startsWith(`${labRoot}${path.sep}`)) throw new Error(`lab_remove_outside_root:${resolved}`);
+  const registered = listLabs({ ...options, repoRoot, labRoot, runGit })
+    .some((lab) => path.resolve(lab.path) === resolved);
+  if (!registered) throw new Error(`lab_remove_unregistered:${resolved}`);
+  runGit(['worktree', 'remove', '--force', resolved], { cwd: repoRoot });
   runGit(['worktree', 'prune'], { cwd: repoRoot });
   telemetry.recordTelemetry({
     phase: 'worktree_lab',
     event: 'remove',
-    labPath,
+    labPath: resolved,
   });
   return { removed: true, pruned: true };
 }

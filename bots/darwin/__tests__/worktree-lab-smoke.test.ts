@@ -10,6 +10,18 @@ const rootGuard = require('../lib/ops-root-guard.ts');
 
 async function main() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'darwin-worktree-lab-smoke-'));
+  const originalTelemetryPath = process.env.DARWIN_TELEMETRY_PATH;
+  process.env.DARWIN_TELEMETRY_PATH = path.join(tmp, 'telemetry.jsonl');
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (originalTelemetryPath === undefined) delete process.env.DARWIN_TELEMETRY_PATH;
+    else process.env.DARWIN_TELEMETRY_PATH = originalTelemetryPath;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  };
+  process.once('exit', cleanup);
+
   const repoRoot = path.join(tmp, 'repo');
   const labRoot = path.join(tmp, 'labs');
   fs.mkdirSync(repoRoot, { recursive: true });
@@ -38,6 +50,19 @@ async function main() {
   const labs = worktreeLab.listLabs({ repoRoot, labRoot, runGit });
   assert.strictEqual(labs.length, 1);
   assert.strictEqual(labs[0].branchName, 'darwin/test');
+
+  assert.throws(
+    () => worktreeLab.removeLab(repoRoot, { repoRoot, labRoot, runGit }),
+    /lab_remove_outside_root/,
+  );
+  assert.throws(
+    () => worktreeLab.removeLab(labRoot, { repoRoot, labRoot, runGit }),
+    /lab_remove_root_forbidden/,
+  );
+  assert.throws(
+    () => worktreeLab.removeLab(path.join(labRoot, 'unregistered'), { repoRoot, labRoot, runGit }),
+    /lab_remove_unregistered/,
+  );
 
   worktreeLab.removeLab(lab.path, { repoRoot, labRoot, runGit });
   assert.ok(commands.some((cmd) => cmd.startsWith('worktree remove --force ')));
@@ -84,8 +109,9 @@ async function main() {
   assert.strictEqual(otherGuard.action, 'warn_only');
   assert.ok(!otherCommands.some((cmd) => cmd.includes('checkout')));
 
-  fs.rmSync(tmp, { recursive: true, force: true });
   console.log('✅ darwin worktree lab smoke ok');
+  cleanup();
+  process.removeListener('exit', cleanup);
 }
 
 main().catch((error) => {

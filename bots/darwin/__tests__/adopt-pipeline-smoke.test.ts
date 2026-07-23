@@ -25,6 +25,14 @@ function measuredProposal(id: string, overrides: Record<string, unknown> = {}) {
       predicate_results: [{ name: 'a', ok: true }],
       budget: { withinWallBudget: true, withinLlmBudget: true },
     },
+    syntax_passed: true,
+    syntax_checks: [{ path: 'bots/darwin/experimental/demo.js', ok: true }],
+    verification_report: {
+      syntax: { pass: true },
+      style: { pass: true },
+      security: { pass: true },
+      diff: { pass: true },
+    },
     ...overrides,
   };
 }
@@ -36,6 +44,7 @@ async function main() {
   const calls: string[] = [];
   let pushed = false;
   let prCreated = false;
+  const transitions: Array<{ id: string; to: string; evidence: Record<string, unknown> }> = [];
 
   const originalLoad: ModuleLoad = Module._load as ModuleLoad;
   Module._load = function patchedLoad(request: string, parent: NodeModule | null, isMain: boolean) {
@@ -50,6 +59,16 @@ async function main() {
         pushHeadToBranch: () => { pushed = true; },
         createPR: () => { prCreated = true; return { ok: true, number: 1, url: 'https://example.invalid/pr/1' }; },
         runGh: () => '',
+      };
+    }
+    if (request === './proposal-store.ts') {
+      return {
+        normalizeProposalState: (status: string) => status,
+        listProposals: () => [],
+        transitionProposal: (id: string, to: string, evidence: Record<string, unknown>) => {
+          transitions.push({ id, to, evidence });
+          return { id, status: to, ...evidence };
+        },
       };
     }
     return originalLoad.call(this, request, parent, isMain);
@@ -75,6 +94,24 @@ async function main() {
     assert.ok(spec.title.includes('darwin: adopt'));
     assert.ok(spec.body.includes('Darwin Findings'));
     assert.ok(spec.body.includes('bots/darwin/experimental/demo.js'));
+    const qualityInput = adopt.buildClaudeQualityGateInput(selected.candidates[0], { number: 1 });
+    assert.strictEqual(qualityInput.builder.ok, true);
+    assert.strictEqual(qualityInput.reviewer.ok, true);
+    assert.strictEqual(qualityInput.guardian.ok, true);
+    assert.strictEqual(adopt.isClaudeQualityGateApproved({ ok: true, pass: true, status: 'promotion_ready', verdict: 'approve_candidate' }), true);
+    assert.strictEqual(adopt.isClaudeQualityGateApproved({ ok: true, pass: false, status: 'promotion_blocked', verdict: 'blocked' }), false);
+    assert.strictEqual(
+      adopt.validateActualAdoptDiff(selected.candidates[0], ['bots/darwin/experimental/demo.js']).ok,
+      true,
+    );
+    assert.strictEqual(
+      adopt.validateActualAdoptDiff(selected.candidates[0], ['bots/hub/src/hidden.ts']).reason,
+      'actual_diff_denylist_match',
+    );
+    assert.strictEqual(
+      adopt.validateActualAdoptDiff(selected.candidates[0], ['bots/darwin/experimental/other.js']).reason,
+      'actual_diff_metadata_mismatch',
+    );
 
     const blockedDry = await adopt.runAdoptForCandidate(selected.blocked.find((item: any) => item.blockedReason === 'denylist_match'), {
       dryRun: false,
@@ -94,7 +131,7 @@ async function main() {
       enabled: false,
       runGit: (args: string[]) => {
         calls.push(args.join(' '));
-        return '';
+        return args[0] === 'diff' ? 'bots/darwin/experimental/demo.js' : '';
       },
     });
     assert.strictEqual(dry.ok, true);
@@ -102,6 +139,30 @@ async function main() {
     assert.strictEqual(pushed, false);
     assert.strictEqual(prCreated, false);
     assert.ok(calls.some((call) => call === 'cherry-pick darwin/safe'));
+
+    transitions.length = 0;
+    const blockedScoring = await adopt.runAdoptForCandidate(selected.candidates[0], {
+      dryRun: false,
+      enabled: true,
+      runGit: (args: string[]) => args[0] === 'diff' ? 'bots/darwin/experimental/demo.js' : '',
+      pushHeadToBranch: () => ({ ok: true }),
+      createPR: () => ({ ok: true, number: 2, url: 'https://example.invalid/pr/2' }),
+      qualityGate: async () => ({ ok: true, pass: false, status: 'promotion_blocked', verdict: 'blocked' }),
+    });
+    assert.strictEqual(blockedScoring.ok, true);
+    assert.strictEqual(blockedScoring.adopted, false);
+    assert.strictEqual(transitions.length, 0, 'blocked Claude score must keep proposal measured');
+
+    const approvedScoring = await adopt.runAdoptForCandidate(selected.candidates[0], {
+      dryRun: false,
+      enabled: true,
+      runGit: (args: string[]) => args[0] === 'diff' ? 'bots/darwin/experimental/demo.js' : '',
+      pushHeadToBranch: () => ({ ok: true }),
+      createPR: () => ({ ok: true, number: 3, url: 'https://example.invalid/pr/3' }),
+      qualityGate: async () => ({ ok: true, pass: true, status: 'promotion_ready', verdict: 'approve_candidate' }),
+    });
+    assert.strictEqual(approvedScoring.adopted, true);
+    assert.ok(transitions.some((item) => item.id === 'safe' && item.to === 'adopted'));
 
     console.log('✅ darwin adopt pipeline smoke ok');
   } finally {

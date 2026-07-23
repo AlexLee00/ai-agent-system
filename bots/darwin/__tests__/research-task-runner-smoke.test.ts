@@ -105,6 +105,51 @@ async function main() {
   assert.strictEqual(dryRunJson.executed, 0);
   assert.strictEqual(dryRunJson.alarmSent, 0);
   assert.strictEqual(dryRunJson.gitMutations, 0);
+
+  const l5GitCalls: string[] = [];
+  const l5Alarms: Array<Record<string, unknown>> = [];
+  const l5TaskApi = {
+    ensureTaskStatusSchema: async () => {},
+    getPendingTasks: async () => [{
+      id: 'TASK-L5-SKILL',
+      type: 'skill_creation',
+      title: 'L5 skill candidate',
+      target: { owner: 'owner', repo: 'repo' },
+    }],
+    executeSkillCreation: async () => ({
+      syntaxOk: true,
+      branch: 'darwin-task/TASK-L5-SKILL',
+      skillPath: 'bots/darwin/skills/generated/SKILL.md',
+      linesOfCode: 10,
+    }),
+  };
+  Module._load = function patchedL5Load(request: string, parent: NodeModule | null, isMain: boolean) {
+    if (request === '../lib/research-tasks') return l5TaskApi;
+    if (request === '../lib/autonomy-level') return { requiresApproval: () => false };
+    if (request === '../../../packages/core/lib/hub-alarm-client') {
+      return { postAlarm: async (payload: Record<string, unknown>) => { l5Alarms.push(payload); return { ok: true }; } };
+    }
+    if (request === '../lib/ops-root-guard') {
+      return { assertOpsRootOnMain: () => ({ ok: true, branch: 'main', action: 'none' }) };
+    }
+    if (request === 'child_process') {
+      return { execFileSync: (_command: string, args: string[]) => { l5GitCalls.push(args.join(' ')); return ''; } };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  process.argv = ['node', runnerPath];
+  try {
+    delete require.cache[runnerPath];
+    require(runnerPath);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  } finally {
+    Module._load = originalLoad;
+    process.argv = originalArgv;
+    delete require.cache[runnerPath];
+  }
+
+  assert.deepStrictEqual(l5GitCalls, [], 'L5 skill completion must never merge into main');
+  assert.ok(String(l5Alarms[0]?.message || '').includes('검증 브랜치'));
   console.log('✅ darwin task runner smoke ok');
 }
 

@@ -37,6 +37,11 @@ async function main() {
     proposalStore: {
       listProposals: () => proposals,
       normalizeProposalState: (status: unknown) => status === 'measured' ? 'measured' : status === 'archived' ? 'archived' : 'proposed',
+      auditProposalConsistency: () => ({
+        activeDuplicatePapers: [{ paperKey: 'arxiv:fixture', count: 2, proposalIds: ['p1', 'p2'] }],
+        implementingWithoutBranch: [],
+        staleImplementations: [],
+      }),
     },
     adoptPipeline: {
       selectAdoptCandidates: () => ({
@@ -53,7 +58,9 @@ async function main() {
 
   try {
     assert.strictEqual(serverModule.DARWIN_OPS_TOOLS.length, 4);
-    assert.strictEqual((await serverModule.callDarwinOpsTool('cycle_status', {}, deps)).proposalCount, 2);
+    const cycleStatus = await serverModule.callDarwinOpsTool('cycle_status', {}, deps);
+    assert.strictEqual(cycleStatus.proposalCount, 2);
+    assert.strictEqual(cycleStatus.consistency.activeDuplicatePapers.length, 1);
     assert.strictEqual((await serverModule.callDarwinOpsTool('proposals', { state: 'measured' }, deps)).proposals.length, 1);
     assert.strictEqual((await serverModule.callDarwinOpsTool('adopt_queue', {}, deps)).candidates.length, 1);
     assert.strictEqual((await serverModule.callDarwinOpsTool('learnings_tail', { limit: 1 }, deps)).lines.length, 1);

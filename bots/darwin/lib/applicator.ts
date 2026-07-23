@@ -30,6 +30,7 @@ interface ProposalStore {
   ensureDirs: () => void;
   buildProposalId: (paper: Partial<ResearchPaper>) => string;
   saveProposal: (proposal: ProposalRecord) => string;
+  findActiveProposalForPaper: (paper: Partial<ResearchPaper>) => ProposalRecord | null;
 }
 
 interface AutonomyLevelModule {
@@ -87,6 +88,7 @@ interface ApplyResult {
   verification: VerificationResult | null;
   alarmSent: boolean;
   proposalId: string | null;
+  skippedReason?: string;
 }
 
 const { callHubLlm }: {
@@ -278,6 +280,18 @@ function verifyPrototype(code: string): VerificationResult {
 
 async function apply(paper: Partial<ResearchPaper>): Promise<ApplyResult> {
   console.log(`[applicator] 시작: ${String(paper.title || '').slice(0, 60)}`);
+  const existing = proposalStore.findActiveProposalForPaper(paper);
+  if (existing) {
+    console.log(`[applicator] 활성 제안 중복 스킵: ${existing.id}`);
+    return {
+      proposal: null,
+      prototype: null,
+      verification: null,
+      alarmSent: false,
+      proposalId: existing.id,
+      skippedReason: 'active_proposal_exists',
+    };
+  }
   eventLake.record({
     eventType: 'proposal_generation_started',
     team: 'darwin',

@@ -14,6 +14,7 @@
     <string>--import</string>
     <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/research-scanner.ts</string>
+    <string>--observe-only</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>

@@ -64,7 +64,7 @@ async function main() {
   let reasoningRecoveryInput = '';
   await implementor._extractFilesWithSingleRecovery(
     '<think>private reasoning without a closing tag',
-    async (input) => {
+    async (input: string) => {
       reasoningRecoveryInput = input;
       return '--- FILE: recovered.js ---\nmodule.exports = true;\n';
     },
@@ -75,7 +75,7 @@ async function main() {
   let identifierRecoveryInput = '';
   await implementor._extractFilesWithSingleRecovery(
     'const legitimateIdentifier012345678901234567890123 = true;',
-    async (input) => {
+    async (input: string) => {
       identifierRecoveryInput = input;
       return '--- FILE: recovered.js ---\nmodule.exports = true;\n';
     },

@@ -7,6 +7,9 @@
 const fs: typeof import('fs') = require('fs');
 const path: typeof import('path') = require('path');
 const env: { PROJECT_ROOT: string } = require('../../../packages/core/lib/env');
+const { validateSuccessPredicate }: {
+  validateSuccessPredicate: (raw: unknown) => { ok: boolean };
+} = require('./success-predicate.ts');
 
 interface ProposalRecord {
   id: string;
@@ -53,26 +56,36 @@ function ensureDirs() {
 
 function buildProposalId(paper: { arxiv_id?: string; title?: string }): string {
   const safeId = String(paper.arxiv_id || paper.title || 'proposal')
-    .replace(/[/.:\s]+/g, '_')
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{N}_-]+/gu, '_')
     .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return `${safeId}_${Date.now()}`;
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 160);
+  return `${safeId || 'proposal'}_${Date.now()}`;
+}
+
+function validateProposalId(proposalId: unknown): string {
+  const value = String(proposalId || '').trim();
+  if (!/^[\p{L}\p{N}][\p{L}\p{N}._:-]{0,199}$/u.test(value) || value.includes('..')) {
+    throw new Error(`invalid_proposal_id:${value}`);
+  }
+  return value;
 }
 
 function saveProposal(proposalData: ProposalRecord): string {
   ensureDirs();
-  const proposalFile = path.join(PROPOSALS_DIR, `${proposalData.id}.json`);
+  const proposalId = validateProposalId(proposalData.id);
+  const proposalFile = path.join(PROPOSALS_DIR, `${proposalId}.json`);
   fs.writeFileSync(proposalFile, JSON.stringify(proposalData, null, 2), 'utf8');
   return proposalFile;
 }
 
 function _findProposalFile(proposalId: string): string | null {
   ensureDirs();
-  const exact = path.join(PROPOSALS_DIR, `${proposalId}.json`);
+  const safeProposalId = validateProposalId(proposalId);
+  const exact = path.join(PROPOSALS_DIR, `${safeProposalId}.json`);
   if (fs.existsSync(exact)) return exact;
-  const files = fs.readdirSync(PROPOSALS_DIR).filter((file) => file.includes(proposalId));
-  if (files.length === 0) return null;
-  return path.join(PROPOSALS_DIR, files[0]);
+  return null;
 }
 
 function loadProposal(proposalId: string): ProposalRecord | null {
@@ -90,10 +103,35 @@ function normalizeProposalState(status: unknown): ProposalLifecycleState {
     value === 'archived'
     || value === 'needs_review'
     || value === 'manual_review'
+    || value === 'rejected'
     || value === 'implementation_failed'
     || value === 'verification_failed'
   ) return 'archived';
   return 'proposed';
+}
+
+function normalizedPaperKey(paper: { arxiv_id?: unknown; title?: unknown } = {}): string {
+  const arxivId = String(paper.arxiv_id || '').trim().replace(/v\d+$/i, '').toLowerCase();
+  if (arxivId) return `arxiv:${arxivId}`;
+  const title = String(paper.title || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+  return title ? `title:${title}` : '';
+}
+
+function findActiveProposalForPaper(paper: { arxiv_id?: unknown; title?: unknown }): (ProposalRecord & { __file: string }) | null {
+  const key = normalizedPaperKey(paper);
+  if (!key) return null;
+  return listProposals()
+    .filter((proposal) => normalizeProposalState(proposal.status) !== 'archived')
+    .filter((proposal) => normalizedPaperKey({ arxiv_id: proposal.arxiv_id, title: proposal.title }) === key)
+    .sort((left, right) => {
+      const rightAt = Date.parse(String(right.updated_at || right.created_at || ''));
+      const leftAt = Date.parse(String(left.updated_at || left.created_at || ''));
+      return (Number.isFinite(rightAt) ? rightAt : 0) - (Number.isFinite(leftAt) ? leftAt : 0);
+    })[0] || null;
 }
 
 function isTransitionAllowed(from: ProposalLifecycleState, to: ProposalLifecycleState): boolean {
@@ -108,6 +146,36 @@ function isTransitionAllowed(from: ProposalLifecycleState, to: ProposalLifecycle
   return allowed[from].includes(to);
 }
 
+function transitionEvidenceErrors(proposal: ProposalRecord, to: ProposalLifecycleState, evidence: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+  if (to === 'implementing') {
+    const branch = String(evidence.branch || proposal.branch || '').trim();
+    if (!branch) errors.push('branch_missing');
+    if (!validateSuccessPredicate(proposal.successPredicate).ok) errors.push('success_predicate_invalid');
+  }
+  if (to === 'measured') {
+    const results = Array.isArray(evidence.predicate_results) ? evidence.predicate_results as Array<Record<string, unknown>> : [];
+    const predicate = proposal.successPredicate && typeof proposal.successPredicate === 'object'
+      ? proposal.successPredicate as Record<string, unknown>
+      : {};
+    const assertions = Array.isArray(predicate.assertions) ? predicate.assertions : [];
+    const resultsMatchAssertions = results.length === assertions.length
+      && results.every((result, index) => {
+        const assertion = assertions[index] && typeof assertions[index] === 'object'
+          ? assertions[index] as Record<string, unknown>
+          : {};
+        return result?.ok === true && String(result?.name || '') === String(assertion.name || '');
+      });
+    if (results.length === 0 || !resultsMatchAssertions) {
+      errors.push('predicate_results_incomplete');
+    }
+  }
+  if (to === 'adopted') {
+    if (!evidence.pr_number && !evidence.pr_url) errors.push('adopt_pr_evidence_missing');
+  }
+  return errors;
+}
+
 function transitionProposal(
   proposalId: string,
   to: ProposalLifecycleState,
@@ -120,6 +188,10 @@ function transitionProposal(
   const from = normalizeProposalState(fromStatus);
   if (!isTransitionAllowed(from, to)) {
     throw new Error(`invalid_proposal_transition:${proposalId}:${from}->${to}`);
+  }
+  const evidenceErrors = transitionEvidenceErrors(proposal, to, evidence || {});
+  if (evidenceErrors.length > 0) {
+    throw new Error(`proposal_transition_evidence_invalid:${proposalId}:${to}:${evidenceErrors.join(',')}`);
   }
 
   const now = new Date().toISOString();
@@ -201,6 +273,58 @@ function listProposals(): Array<ProposalRecord & { __file: string }> {
       return [];
     }
   });
+}
+
+function auditProposalConsistency(options: { now?: Date | string | number; staleHours?: number } = {}) {
+  const proposals = listProposals();
+  const nowMs = options.now == null ? Date.now() : new Date(options.now).getTime();
+  const staleHours = Number.isFinite(Number(options.staleHours)) && Number(options.staleHours) > 0
+    ? Number(options.staleHours)
+    : 24;
+  const activeByPaper = new Map<string, Array<ProposalRecord & { __file: string }>>();
+  const implementingWithoutBranch: Array<Record<string, unknown>> = [];
+  const staleImplementations: Array<Record<string, unknown>> = [];
+
+  for (const proposal of proposals) {
+    const state = normalizeProposalState(proposal.status);
+    if (state !== 'archived') {
+      const paperKey = normalizedPaperKey({ arxiv_id: proposal.arxiv_id, title: proposal.title });
+      if (paperKey) activeByPaper.set(paperKey, [...(activeByPaper.get(paperKey) || []), proposal]);
+    }
+    if (state !== 'implementing') continue;
+    if (!String(proposal.branch || '').trim()) {
+      implementingWithoutBranch.push({ id: proposal.id, status: proposal.status || null });
+    }
+    const anchor = String(
+      proposal.implementation_progress_at
+      || proposal.implemented_at
+      || proposal.verification_started_at
+      || proposal.implementation_started_at
+      || proposal.updated_at
+      || proposal.created_at
+      || ''
+    );
+    const anchorMs = Date.parse(anchor);
+    const ageHours = Number.isFinite(anchorMs) ? Math.floor((nowMs - anchorMs) / 3_600_000) : null;
+    if (ageHours !== null && ageHours > staleHours) {
+      staleImplementations.push({ id: proposal.id, branch: proposal.branch || null, anchorAt: anchor, ageHours });
+    }
+  }
+
+  const activeDuplicatePapers = Array.from(activeByPaper.entries())
+    .filter(([, items]) => items.length > 1)
+    .map(([paperKey, items]) => ({
+      paperKey,
+      count: items.length,
+      proposalIds: items.map((item) => item.id),
+    }));
+  return {
+    ok: true,
+    staleHours,
+    activeDuplicatePapers,
+    implementingWithoutBranch,
+    staleImplementations,
+  };
 }
 
 function _ageDays(nowMs: number, at: string): number {
@@ -291,6 +415,11 @@ function updateStatus(
   const proposalFile = _findProposalFile(proposalId);
   if (!proposalFile) return null;
   const proposal = JSON.parse(fs.readFileSync(proposalFile, 'utf8')) as ProposalRecord;
+  const from = normalizeProposalState(proposal.status);
+  const to = normalizeProposalState(status);
+  if (from !== to) {
+    throw new Error(`proposal_lifecycle_transition_requires_transitionProposal:${proposalId}:${from}->${to}`);
+  }
   proposal.status = status;
   proposal.updated_at = new Date().toISOString();
   Object.assign(proposal, extra || {});
@@ -303,6 +432,9 @@ module.exports = {
   PROPOSALS_DIR,
   ensureDirs,
   buildProposalId,
+  validateProposalId,
+  normalizedPaperKey,
+  findActiveProposalForPaper,
   saveProposal,
   loadProposal,
   updateStatus,
@@ -310,6 +442,7 @@ module.exports = {
   normalizeProposalState,
   isTransitionAllowed,
   listProposals,
+  auditProposalConsistency,
   planProposalTriage,
   runProposalTriage,
 };

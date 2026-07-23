@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const env = require('../../../../packages/core/lib/env');
 const { publishToWebhook } = require('../../../../packages/core/lib/reporting-hub');
@@ -8,6 +9,76 @@ const autonomyLevel = require('../../../darwin/lib/autonomy-level');
 const researchTasks = require('../../../darwin/lib/research-tasks');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
+const CALLBACK_SECRET_HEADER = 'x-hub-control-callback-secret';
+
+function normalizeText(value: unknown) {
+  return String(value == null ? '' : value).trim();
+}
+
+function parseCsv(value: unknown) {
+  return normalizeText(value).split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function getHeader(req: any, name: string) {
+  const candidate = req?.headers?.[name]
+    ?? req?.headers?.[name.toLowerCase()]
+    ?? req?.get?.(name)
+    ?? req?.get?.(name.toLowerCase());
+  return normalizeText(Array.isArray(candidate) ? candidate[0] : candidate);
+}
+
+function safeEqual(expected: string, actual: string) {
+  const left = Buffer.from(expected, 'utf8');
+  const right = Buffer.from(actual, 'utf8');
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function extractActor(req: any) {
+  const callbackQuery = req?.body?.callback_query || {};
+  const from = req?.body?.from || callbackQuery.from || {};
+  const message = req?.body?.message || callbackQuery.message || {};
+  return {
+    id: normalizeText(from.id),
+    username: normalizeText(from.username).replace(/^@+/, '').toLowerCase(),
+    chatId: normalizeText(message?.chat?.id),
+  };
+}
+
+function validateDarwinCallbackEnvelope(req: any, source: NodeJS.ProcessEnv = process.env) {
+  const configuredSecret = normalizeText(source.HUB_CONTROL_CALLBACK_SECRET);
+  if (!configuredSecret) return { ok: false, status: 503, error: 'darwin_callback_secret_not_configured' };
+  const providedSecret = getHeader(req, CALLBACK_SECRET_HEADER);
+  if (!providedSecret || !safeEqual(configuredSecret, providedSecret)) {
+    return { ok: false, status: 403, error: 'darwin_callback_untrusted_source' };
+  }
+
+  const actor = extractActor(req);
+  const allowedIds = parseCsv(source.HUB_CONTROL_APPROVER_IDS);
+  const allowedUsernames = parseCsv(source.HUB_CONTROL_APPROVER_USERNAMES)
+    .map((item) => item.replace(/^@+/, '').toLowerCase());
+  if (allowedIds.length === 0 && allowedUsernames.length === 0) {
+    return { ok: false, status: 503, error: 'darwin_callback_approver_not_configured', actor };
+  }
+  if (!allowedIds.includes(actor.id) && !allowedUsernames.includes(actor.username)) {
+    return { ok: false, status: 403, error: 'darwin_callback_actor_not_allowed', actor };
+  }
+
+  const expectedChatId = normalizeText(source.HUB_CONTROL_APPROVAL_CHAT_ID || source.TELEGRAM_GROUP_ID);
+  if (expectedChatId && actor.chatId !== expectedChatId) {
+    return { ok: false, status: 403, error: 'darwin_callback_chat_not_allowed', actor };
+  }
+  return { ok: true, status: 200, actor };
+}
+
+function implementationBranch(proposalId: string) {
+  return `darwin/${proposalId.replace(/[^A-Za-z0-9._/-]+/g, '-').slice(0, 96)}`;
+}
+
+function skillTaskId(parentTaskId: string) {
+  const safeParent = parentTaskId.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 38);
+  const digest = crypto.createHash('sha256').update(parentTaskId).digest('hex').slice(0, 10);
+  return `SKILL-${safeParent}-${digest}`;
+}
 
 function readTelegramToken() {
   try {
@@ -50,6 +121,11 @@ export async function darwinCallbackRoute(req: any, res: any) {
     return res.status(400).json({ ok: false, error: 'callback_data required' });
   }
 
+  const envelope = validateDarwinCallbackEnvelope(req);
+  if (!envelope.ok) {
+    return res.status(envelope.status).json({ ok: false, error: envelope.error });
+  }
+
   const parts = String(callbackData).split(':');
   if (parts.length !== 2) {
     return res.status(400).json({ ok: false, error: 'invalid callback_data format' });
@@ -73,60 +149,70 @@ export async function darwinCallbackRoute(req: any, res: any) {
     return res.status(400).json({ ok: false, error: `unknown action: ${action}` });
   }
 
-  if (!proposalId || proposalId.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(proposalId)) {
+  try {
+    proposalStore.validateProposalId(proposalId);
+  } catch {
     return res.status(400).json({ ok: false, error: 'proposalId required' });
   }
 
   try {
+    if (action === 'darwin_merge' || action === 'darwin_merge_skill') {
+      return res.status(409).json({ ok: false, error: 'direct_main_merge_retired' });
+    }
+
     if (action === 'darwin_approve') {
-      proposalStore.updateStatus(proposalId, 'approved', { approved_at: new Date().toISOString() });
+      const proposal = proposalStore.loadProposal(proposalId);
+      if (!proposal) return res.status(404).json({ ok: false, error: 'proposal not found' });
+      const state = proposalStore.normalizeProposalState(proposal.status);
+      if (state !== 'proposed') {
+        return res.status(409).json({ ok: false, error: `proposal_not_proposed:${state}` });
+      }
+      const now = new Date().toISOString();
+      proposalStore.transitionProposal(proposalId, 'implementing', {
+        reason: 'master_approved',
+        approved_at: now,
+        implementation_queued_at: now,
+        branch: implementationBranch(proposalId),
+      });
       await answerCallbackQuery(callbackQueryId, '승인 완료! edison이 구현을 시작합니다.');
       const implementor = require('../../../darwin/lib/implementor');
-      setImmediate(() => implementor.triggerImplementation(proposalId));
+      setImmediate(() => {
+        Promise.resolve(implementor.triggerImplementation(proposalId)).catch((error: any) => {
+          autonomyLevel.recordError(error);
+          console.error(`[darwin-callback] 구현 시작 실패 (${proposalId}): ${error.message}`);
+        });
+      });
       return res.json({ ok: true, action: 'approved', proposalId });
     }
 
     if (action === 'darwin_reject') {
-      proposalStore.updateStatus(proposalId, 'rejected', { rejected_at: new Date().toISOString() });
+      const proposal = proposalStore.loadProposal(proposalId);
+      if (!proposal) return res.status(404).json({ ok: false, error: 'proposal not found' });
+      const state = proposalStore.normalizeProposalState(proposal.status);
+      if (state === 'archived' || state === 'adopted') {
+        return res.status(409).json({ ok: false, error: `proposal_terminal:${state}` });
+      }
+      proposalStore.transitionProposal(proposalId, 'archived', {
+        reason: 'master_rejected',
+        rejected_at: new Date().toISOString(),
+      });
       await answerCallbackQuery(callbackQueryId, '거절 처리되었습니다.');
       return res.json({ ok: true, action: 'rejected', proposalId });
     }
 
     if (action === 'darwin_manual') {
-      proposalStore.updateStatus(proposalId, 'manual_review', { manual_review_at: new Date().toISOString() });
+      const proposal = proposalStore.loadProposal(proposalId);
+      if (!proposal) return res.status(404).json({ ok: false, error: 'proposal not found' });
+      const state = proposalStore.normalizeProposalState(proposal.status);
+      if (state === 'archived' || state === 'adopted') {
+        return res.status(409).json({ ok: false, error: `proposal_terminal:${state}` });
+      }
+      proposalStore.transitionProposal(proposalId, 'archived', {
+        reason: 'manual_review',
+        manual_review_at: new Date().toISOString(),
+      });
       await answerCallbackQuery(callbackQueryId, '수동 검토 대상으로 전환했습니다.');
       return res.json({ ok: true, action: 'manual_review', proposalId });
-    }
-
-    if (action === 'darwin_merge') {
-      await answerCallbackQuery(callbackQueryId, '머지를 시작합니다.');
-      const verifier = require('../../../darwin/lib/verifier');
-      setImmediate(() => verifier.mergeVerifiedProposal(proposalId));
-      return res.json({ ok: true, action: 'merge_started', proposalId });
-    }
-
-    if (action === 'darwin_merge_skill') {
-      const task = await researchTasks.loadTask(proposalId);
-      if (!task?.result?.branch) {
-        return res.status(404).json({ ok: false, error: 'skill task branch missing' });
-      }
-      await answerCallbackQuery(callbackQueryId, '스킬 브랜치 머지를 시작합니다.');
-      const verifier = require('../../../darwin/lib/verifier');
-      setImmediate(async () => {
-        try {
-          await verifier.mergeBranch(task.result.branch, task.id);
-          await researchTasks.updateTask(task.id, {
-            status: 'merged',
-            merged_at: new Date().toISOString(),
-          });
-        } catch (error: any) {
-          await researchTasks.updateTask(task.id, {
-            status: 'merge_failed',
-            merge_error: error.message,
-          });
-        }
-      });
-      return res.json({ ok: true, action: 'skill_merge_started', proposalId });
     }
 
     if (action === 'darwin_create_skill') {
@@ -143,7 +229,7 @@ export async function darwinCallbackRoute(req: any, res: any) {
         return res.status(400).json({ ok: false, error: 'repo name missing' });
       }
       const repoPart = repoName.split('/')[1] || repoName;
-      const taskId = `SKILL-${proposalId}-${Date.now()}`.slice(0, 60);
+      const taskId = skillTaskId(proposalId);
       const newTask = researchTasks.createTask({
         id: taskId,
         title: `${repoName} 패턴 → 스킬 생성 (마스터 승인!)`,
@@ -206,3 +292,5 @@ export async function darwinCallbackRoute(req: any, res: any) {
     return res.status(500).json({ ok: false, error: error.message });
   }
 }
+
+module.exports.validateDarwinCallbackEnvelope = validateDarwinCallbackEnvelope;

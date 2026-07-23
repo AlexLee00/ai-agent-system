@@ -36,11 +36,37 @@ async function main() {
     delete require.cache[storePath];
     const store = require(storePath);
 
+    assert.strictEqual(store.normalizeProposalState('rejected'), 'archived');
+    assert.strictEqual(store.normalizeProposalState('verifying'), 'implementing');
+    assert.match(store.buildProposalId({ title: 'A Study: Safety (v2) / 100%' }), /^A_Study_Safety_v2_100_\d+$/);
+    assert.throws(() => store.loadProposal('../escape'), /invalid_proposal_id/);
+    assert.throws(() => store.saveProposal({ id: '../escape', status: 'proposed' }), /invalid_proposal_id/);
+
     writeProposal(proposalDir, {
       id: 'proposal-ok',
       status: 'pending_approval',
       created_at: '2026-07-01T00:00:00.000Z',
+      successPredicate: {
+        assertions: [
+          { name: 'a', command: 'true', expect: { exitCode: 0 } },
+          { name: 'b', command: 'true', expect: { exitCode: 0 } },
+          { name: 'c', command: 'true', expect: { exitCode: 0 } },
+        ],
+        targetMetric: {
+          description: 'state-machine fixture',
+          source: 'smoke',
+        },
+        budget: {
+          maxWallMs: 300000,
+          maxLlmCalls: 20,
+        },
+      },
     });
+    assert.strictEqual(store.loadProposal('proposal'), null, 'proposal mutation lookup must require an exact id');
+    assert.throws(
+      () => store.updateStatus('proposal-ok', 'archived', { reason: 'legacy_bypass' }),
+      /proposal_lifecycle_transition_requires_transitionProposal/,
+    );
 
     const implementing = store.transitionProposal('proposal-ok', 'implementing', {
       reason: 'implementation_started',
@@ -55,13 +81,68 @@ async function main() {
       /invalid_proposal_transition/,
     );
 
+    assert.throws(
+      () => store.transitionProposal('proposal-ok', 'measured', {
+        reason: 'verification_passed',
+        predicate_results: [],
+        metrics_evidence: [],
+      }),
+      /proposal_transition_evidence_invalid/,
+    );
+    assert.throws(
+      () => store.transitionProposal('proposal-ok', 'measured', {
+        reason: 'verification_passed',
+        predicate_results: [
+          { name: 'x', ok: true },
+          { name: 'y', ok: true },
+          { name: 'z', ok: true },
+        ],
+        metrics_evidence: [],
+      }),
+      /proposal_transition_evidence_invalid/,
+    );
     const measured = store.transitionProposal('proposal-ok', 'measured', {
       reason: 'verification_passed',
-      predicate_results: [],
+      predicate_results: [
+        { name: 'a', ok: true },
+        { name: 'b', ok: true },
+        { name: 'c', ok: true },
+      ],
       metrics_evidence: [],
     });
     assert.strictEqual(measured.status, 'measured');
-    assert.strictEqual(measured.measurement.pending_d3_predicate, true);
+    assert.strictEqual(measured.measurement.pending_d3_predicate, false);
+
+    writeProposal(proposalDir, {
+      id: 'duplicate-active-old',
+      arxiv_id: '2607.99999',
+      status: 'pending_approval',
+      created_at: '2026-07-28T00:00:00.000Z',
+    });
+    writeProposal(proposalDir, {
+      id: 'duplicate-active-new',
+      arxiv_id: '2607.99999',
+      status: 'approved',
+      created_at: '2026-07-29T00:00:00.000Z',
+    });
+    writeProposal(proposalDir, {
+      id: 'duplicate-archived',
+      arxiv_id: '2607.99999',
+      status: 'archived',
+      created_at: '2026-07-30T00:00:00.000Z',
+    });
+    const activeDuplicate = store.findActiveProposalForPaper({ arxiv_id: '2607.99999' });
+    assert.strictEqual(activeDuplicate.id, 'duplicate-active-new');
+
+    writeProposal(proposalDir, {
+      id: 'impl-no-branch',
+      status: 'implementing',
+      implementation_started_at: '2026-07-28T00:00:00.000Z',
+    });
+    const consistency = store.auditProposalConsistency({ now: '2026-07-30T00:00:00.000Z' });
+    assert.ok(consistency.activeDuplicatePapers.some((item: { paperKey: string }) => item.paperKey === 'arxiv:2607.99999'));
+    assert.ok(consistency.implementingWithoutBranch.some((item: { id: string }) => item.id === 'impl-no-branch'));
+    assert.ok(consistency.staleImplementations.some((item: { id: string }) => item.id === 'impl-no-branch'));
 
     const now = new Date('2026-07-30T00:00:00.000Z');
     writeProposal(proposalDir, {

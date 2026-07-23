@@ -27,6 +27,8 @@ async function main() {
   const originalLoad: ModuleLoad = Module._load as ModuleLoad;
   const originalAutonomyLevel = process.env.DARWIN_AUTONOMY_LEVEL;
   const originalKillSwitch = process.env.DARWIN_KILL_SWITCH;
+  const originalL5Enabled = process.env.DARWIN_L5_ENABLED;
+  const originalTier2AutoApply = process.env.DARWIN_TIER2_AUTO_APPLY;
 
   Module._load = function patchedLoad(request: string, parent: NodeModule | null, isMain: boolean) {
     if (request === '../../../packages/core/lib/env' || String(request).endsWith('packages/core/lib/env')) {
@@ -85,8 +87,24 @@ async function main() {
     resetState(autonomy, { level: 'L3', consecutiveSuccesses: 0, appliedSuccesses: 0 });
     process.env.DARWIN_AUTONOMY_LEVEL = 'L5';
     state = autonomy.loadState();
-    assert.strictEqual(state.level, 'L5');
+    assert.strictEqual(state.level, 'L3', 'configured autonomy must be a ceiling, not override runtime demotion');
     delete process.env.DARWIN_AUTONOMY_LEVEL;
+
+    resetState(autonomy, { level: 'L5', consecutiveSuccesses: 10, appliedSuccesses: 3 });
+    assert.strictEqual(autonomy.requiresApproval(), true, 'unset L5 gates must default to approval');
+    process.env.DARWIN_L5_ENABLED = 'true';
+    process.env.DARWIN_TIER2_AUTO_APPLY = 'true';
+    assert.strictEqual(autonomy.requiresApproval(), false);
+    process.env.DARWIN_KILL_SWITCH = 'true';
+    assert.strictEqual(autonomy.requiresApproval(), true, 'kill switch must stop L5 auto implementation');
+    delete process.env.DARWIN_KILL_SWITCH;
+    process.env.DARWIN_L5_ENABLED = 'false';
+    assert.strictEqual(autonomy.requiresApproval(), true, 'explicit L5 disable must require approval');
+    process.env.DARWIN_L5_ENABLED = 'true';
+    process.env.DARWIN_TIER2_AUTO_APPLY = 'false';
+    assert.strictEqual(autonomy.requiresApproval(), true, 'explicit Tier2 disable must require approval');
+    delete process.env.DARWIN_L5_ENABLED;
+    delete process.env.DARWIN_TIER2_AUTO_APPLY;
 
     resetState(autonomy, { level: 'L4', consecutiveSuccesses: 8, appliedSuccesses: 2, error_count: 1 });
     autonomy.recordMergeFailure(new Error('merge conflict'));
@@ -105,6 +123,10 @@ async function main() {
     else process.env.DARWIN_AUTONOMY_LEVEL = originalAutonomyLevel;
     if (originalKillSwitch === undefined) delete process.env.DARWIN_KILL_SWITCH;
     else process.env.DARWIN_KILL_SWITCH = originalKillSwitch;
+    if (originalL5Enabled === undefined) delete process.env.DARWIN_L5_ENABLED;
+    else process.env.DARWIN_L5_ENABLED = originalL5Enabled;
+    if (originalTier2AutoApply === undefined) delete process.env.DARWIN_TIER2_AUTO_APPLY;
+    else process.env.DARWIN_TIER2_AUTO_APPLY = originalTier2AutoApply;
     delete require.cache[autonomyPath];
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

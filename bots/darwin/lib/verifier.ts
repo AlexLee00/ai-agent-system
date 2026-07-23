@@ -25,11 +25,6 @@ const {
   removeLab: (labPath: string) => { removed: boolean; pruned: boolean };
 } = require('./worktree-lab');
 const {
-  assertOpsRootOnMain,
-}: {
-  assertOpsRootOnMain: (options?: Record<string, unknown>) => { ok: boolean; branch: string; action: string; message: string };
-} = require('./ops-root-guard');
-const {
   runSuccessPredicate,
   appendLearningLine,
 }: {
@@ -85,6 +80,7 @@ interface ProposalRecord {
 
 interface ProposalStore {
   loadProposal(proposalId: string): ProposalRecord | null;
+  normalizeProposalState?(status: unknown): string;
   updateStatus(
     proposalId: string,
     status: string,
@@ -98,9 +94,7 @@ interface ProposalStore {
 }
 
 interface AutonomyLevelModule {
-  requiresApproval(): boolean;
   recordVerifiedSuccess(): void;
-  recordMergeSuccess(): void;
   recordMergeFailure(error: unknown): void;
   recordError(error: unknown): void;
 }
@@ -295,12 +289,19 @@ function _resolveVerificationFiles(proposal: ProposalRecord | null, cwd = REPO_R
 async function triggerVerification(proposalId: string, branchName: string): Promise<{ ok: true; passed: boolean; changedFiles: string[]; verificationText: string }> {
   const proposal = proposalStoreTyped.loadProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
+  const proposalState = proposalStoreTyped.normalizeProposalState
+    ? proposalStoreTyped.normalizeProposalState(proposal.status)
+    : String(proposal.status || 'implementing');
+  if (proposalState !== 'implementing') {
+    throw new Error(`proposal_not_implementing:${proposalId}:${proposalState}`);
+  }
 
   let lab: { branchName: string; path: string } | null = null;
   let passed = false;
   let keepLab = false;
   let deleteBranch = false;
-  proposalStoreTyped.updateStatus(proposalId, 'verifying', {
+  proposalStoreTyped.updateStatus(proposalId, 'implementing', {
+    verification_phase: 'running',
     verification_started_at: new Date().toISOString(),
     branch: branchName,
   });
@@ -322,7 +323,6 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
     const verificationText = passed
       ? `PASS successPredicate assertions=${predicateResult.assertionResults.length}`
       : `FAIL successPredicate reason=${predicateResult.failureReason || 'unknown'} errors=${predicateResult.validation?.errors?.join(',') || 'none'}`;
-    const requiresApproval = autonomyLevelTyped.requiresApproval();
     logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
     if (!passed) {
       await _recordVerificationFailureTrajectory(
@@ -440,12 +440,7 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
       team: 'darwin',
       alertLevel: passed ? 2 : 3,
       fromBot: 'proof-r',
-      inlineKeyboard: passed && requiresApproval
-        ? [[
-            { text: '🧾 채택 검토', callback_data: `darwin_manual:${proposalId}` },
-            { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
-          ]]
-        : !passed ? [[
+      inlineKeyboard: !passed ? [[
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
           ]]
         : null,
@@ -470,12 +465,8 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
           branch: branchName,
           error: errorMessage,
         });
-      } catch {
-        proposalStoreTyped.updateStatus(proposalId, 'archived', {
-          archive_reason: 'verification_error',
-          branch: branchName,
-          error: errorMessage,
-        });
+      } catch (transitionError) {
+        logger.error(`상태 전이 실패: ${proposalId} -> ${toErrorMessage(transitionError)}`);
       }
     } else {
       proposalStoreTyped.updateStatus(proposalId, 'archived', {
@@ -522,62 +513,14 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
 }
 
 async function mergeVerifiedProposal(proposalId: string): Promise<{ ok: true; branch: string }> {
-  const proposal = proposalStoreTyped.loadProposal(proposalId);
-  if (!proposal?.branch) {
-    const error = new Error(`branch missing for proposal: ${proposalId}`);
-    autonomyLevelTyped.recordMergeFailure(error);
-    throw error;
-  }
-
-  const merged = await mergeBranch(proposal.branch, proposalId);
-  if (proposalStoreTyped.transitionProposal) {
-    proposalStoreTyped.transitionProposal(proposalId, 'adopted', {
-      reason: 'merge_succeeded',
-      merged_at: new Date().toISOString(),
-      merged_branch: proposal.branch,
-    });
-  } else {
-    proposalStoreTyped.updateStatus(proposalId, 'adopted', {
-      merged_at: new Date().toISOString(),
-      merged_branch: proposal.branch,
-    });
-  }
-  autonomyLevelTyped.recordMergeSuccess();
-  await postAlarm({
-    message: `🎉 다윈 제안 머지 완료\n📄 ${proposal.title || proposalId}\n🌿 ${proposal.branch}`,
-    team: 'darwin',
-    alertLevel: 2,
-    fromBot: 'proof-r',
-  } as AlarmPayload);
-  return merged;
+  void proposalId;
+  throw new Error('direct_main_merge_retired');
 }
 
 async function mergeBranch(branchName: string, label: string): Promise<{ ok: true; branch: string }> {
-  const guard = assertOpsRootOnMain({ context: `verifier:merge:${label}` });
-  if (!guard.ok) throw new Error(`ops_root_not_main:${guard.branch}`);
-  try {
-    _runGit(['merge', '--no-ff', branchName, '-m', `merge(darwin): ${label}`]);
-    _deleteBranchIfExists(branchName);
-    return { ok: true, branch: branchName };
-  } catch (error) {
-    const stderr = toErrorMessage(error);
-    if (/CONFLICT|Automatic merge failed|fix conflicts/i.test(stderr)) {
-      try {
-        _runGit(['merge', '--abort']);
-      } catch {}
-      await postAlarm({
-        message: `⚠️ 다윈 머지 충돌\n🌿 ${branchName}\n사유: ${stderr.slice(0, 500)}`,
-        team: 'darwin',
-        alertLevel: 3,
-        fromBot: 'proof-r',
-        inlineKeyboard: [[
-            { text: '📝 수동 검토', callback_data: `darwin_manual:${label}` },
-        ]],
-      } as AlarmPayload);
-    }
-    autonomyLevelTyped.recordMergeFailure(error);
-    throw error;
-  }
+  void branchName;
+  void label;
+  throw new Error('direct_main_merge_retired');
 }
 
 module.exports = {

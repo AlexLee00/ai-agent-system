@@ -53,6 +53,11 @@ function normalizeLevel(level: unknown): AutonomyLevel {
   return 'L4';
 }
 
+function lowerLevel(left: AutonomyLevel, right: AutonomyLevel): AutonomyLevel {
+  const rank: Record<AutonomyLevel, number> = { L3: 3, L4: 4, L5: 5 };
+  return rank[left] <= rank[right] ? left : right;
+}
+
 function ensureStateDir() {
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
 }
@@ -80,15 +85,17 @@ function loadState(): AutonomyState {
       ...DEFAULT_STATE,
       ...(JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) as Partial<AutonomyState>),
     };
-    merged.level = normalizeLevel(envLevel || merged.level);
+    const persistedLevel = normalizeLevel(merged.level);
+    merged.level = envLevel ? lowerLevel(persistedLevel, normalizeLevel(envLevel)) : persistedLevel;
     merged.error_count = count(merged.error_count);
     merged.consecutiveSuccesses = count(merged.consecutiveSuccesses);
     merged.appliedSuccesses = count(merged.appliedSuccesses);
     return merged;
   } catch {
+    const defaultLevel = normalizeLevel(DEFAULT_STATE.level);
     return {
       ...DEFAULT_STATE,
-      level: normalizeLevel(envLevel || DEFAULT_STATE.level),
+      level: envLevel ? lowerLevel(defaultLevel, normalizeLevel(envLevel)) : defaultLevel,
     };
   }
 }
@@ -194,6 +201,9 @@ function recordError(error: unknown): AutonomyState {
 }
 
 function requiresApproval(): boolean {
+  if (killSwitchOn()) return true;
+  if (String(process.env.DARWIN_L5_ENABLED || '').trim().toLowerCase() !== 'true') return true;
+  if (String(process.env.DARWIN_TIER2_AUTO_APPLY || '').trim().toLowerCase() !== 'true') return true;
   return loadState().level !== 'L5';
 }
 

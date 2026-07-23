@@ -28,6 +28,10 @@ function recordRoot(label: string, rootBranches: string[]) {
 }
 
 async function main() {
+  if (process.env.DARWIN_HARD_SMOKE_ENABLED !== 'true') {
+    console.log(JSON.stringify({ ok: true, skipped: true, reason: 'darwin_hard_smoke_disabled' }));
+    return;
+  }
   const rootBranches: string[] = [];
   const stamp = Date.now();
   const proposalId = `d3d4-hard-${stamp}`;

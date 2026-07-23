@@ -251,7 +251,23 @@ async function ensureTaskStatusSchema(): Promise<unknown> {
 }
 
 function _taskPath(taskId: string): string {
-  return path.join(TASKS_DIR, `${taskId}.json`);
+  const safeTaskId = String(taskId || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(safeTaskId) || safeTaskId.includes('..')) {
+    throw new Error(`invalid_task_id:${taskId}`);
+  }
+  return path.join(TASKS_DIR, `${safeTaskId}.json`);
+}
+
+function _safeSkillTarget(category: unknown, name: unknown) {
+  const skillDir = String(category || 'shared').trim();
+  const skillName = String(name || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(skillDir)) {
+    throw new Error(`invalid_skill_category:${skillDir}`);
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(skillName) || skillName.includes('..')) {
+    throw new Error(`invalid_skill_name:${skillName}`);
+  }
+  return { skillDir, skillName };
 }
 
 function _loadAllTasks(): ResearchTask[] {
@@ -573,8 +589,10 @@ async function executeSkillCreation(task: ResearchTask): Promise<SkillCreationRe
   await updateTask(task.id, { status: 'running', started_at: new Date().toISOString() });
 
   try {
-    const skillDir = task.targetCategory || 'shared';
-    const skillName = task.skillName || `auto-${String(task.id || '').toLowerCase()}`;
+    const { skillDir, skillName } = _safeSkillTarget(
+      task.targetCategory || 'shared',
+      task.skillName || `auto-${String(task.id || '').toLowerCase()}`,
+    );
     const skillRelPath = path.join('packages', 'core', 'lib', 'skills', skillDir, `${skillName}.js`);
     const branchName = `darwin/skill-${skillName}`;
     const lab = createLab(branchName);
@@ -732,4 +750,5 @@ module.exports = {
   executeGitHubAnalysis,
   executeSkillCreation,
   autoCreateSkillTaskFromAnalysis,
+  _testOnly_safeSkillTarget: _safeSkillTarget,
 };

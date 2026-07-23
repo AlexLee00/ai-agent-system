@@ -50,6 +50,7 @@ const DOMAIN_KEYWORDS: Record<DarwinDomain, string[]> = {
 
 let _requestSlot: Promise<void> = Promise.resolve();
 let _lastRequestAt = 0;
+let _globalCooldownUntil = 0;
 
 function _readPositiveIntEnv(name: string, fallback: number, options: { min?: number; max?: number } = {}): number {
   const raw = String(process.env[name] || '').trim();
@@ -93,23 +94,38 @@ function _retryDelayMs(res: Pick<Response, 'headers'> | null, status: number | u
   return exponentialDelay;
 }
 
-async function _waitForRequestSlot(): Promise<void> {
-  const run = _requestSlot.then(async () => {
+async function _fetchInRequestSlot(url: string, attempt: number): Promise<Response> {
+  let release: () => void = () => {};
+  const previous = _requestSlot;
+  _requestSlot = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous.catch(() => undefined);
+  try {
     const elapsed = Date.now() - _lastRequestAt;
-    const waitMs = Math.max(0, GLOBAL_REQUEST_GAP_MS - elapsed);
+    const cooldownMs = Math.max(0, _globalCooldownUntil - Date.now());
+    const waitMs = Math.max(0, GLOBAL_REQUEST_GAP_MS - elapsed, cooldownMs);
     if (waitMs > 0) {
       await _sleep(waitMs);
     }
     _lastRequestAt = Date.now();
-  });
-
-  _requestSlot = run.catch(() => undefined);
-  await run;
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (res.status === 429) {
+      _globalCooldownUntil = Math.max(
+        _globalCooldownUntil,
+        Date.now() + _retryDelayMs(res, res.status, attempt),
+      );
+    }
+    return res;
+  } finally {
+    release();
+  }
 }
 
 function _resetRequestThrottleForTest(): void {
   _requestSlot = Promise.resolve();
   _lastRequestAt = 0;
+  _globalCooldownUntil = 0;
 }
 
 function _shouldRetry(err?: unknown, status?: number): boolean {
@@ -131,12 +147,10 @@ async function _fetchWithRetry(url: string, context: string): Promise<Response> 
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     try {
-      await _waitForRequestSlot();
-      const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const res = await _fetchInRequestSlot(url, attempt);
       if (res.ok) return res;
 
       if (!_shouldRetry(null, res.status) || attempt === MAX_RETRIES) {
-        console.warn(`[arxiv-client] ${context} 실패: HTTP ${res.status}`);
         return res;
       }
 

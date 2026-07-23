@@ -13,6 +13,7 @@ type ModuleLoad = (request: string, parent: NodeModule | null, isMain: boolean) 
 async function main() {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'darwin-verifier-recovery-'));
   fs.mkdirSync(path.join(tmpRoot, 'bots/darwin'), { recursive: true });
+  fs.writeFileSync(path.join(tmpRoot, '.git'), 'gitdir: fixture\n', 'utf8');
   fs.writeFileSync(path.join(tmpRoot, 'bots/darwin/fixture.ts'), 'export const fixture = true;\n', 'utf8');
 
   const originalLoad: ModuleLoad = Module._load as ModuleLoad;
@@ -20,7 +21,6 @@ async function main() {
   const updates: Array<{ id: string; status: string; extra?: Record<string, unknown> }> = [];
   const autonomyCalls: string[] = [];
   let verificationOverall = true;
-  let requiresApproval = true;
   let llmText = '종합 판정: PASS\n1. 문법 정확성: PASS';
   const passPredicate = {
     assertions: [
@@ -39,6 +39,7 @@ async function main() {
     ],
   };
   let proposal = {
+    status: 'implementing',
     branch: 'feature/recovery',
     title: 'Recovery fixture',
     changed_files: ['bots/darwin/fixture.ts'],
@@ -50,7 +51,7 @@ async function main() {
       return {
         execFileSync: (binOrCommand: string, argsOrOptions: string[] | Record<string, unknown>) => {
           const args = Array.isArray(argsOrOptions) ? argsOrOptions : [];
-          const command = Array.isArray(argsOrOptions) ? args.join(' ') : binOrCommand;
+          const command = Array.isArray(argsOrOptions) ? [binOrCommand, ...args].join(' ') : binOrCommand;
           gitCommands.push(command);
           if (command === 'false') {
             const error = new Error('predicate failed');
@@ -105,15 +106,22 @@ async function main() {
     if (request === './proposal-store') {
       return {
         loadProposal: () => proposal,
+        normalizeProposalState: (status: string) => status,
         updateStatus: (id: string, status: string, extra?: Record<string, unknown>) => {
           updates.push({ id, status, extra });
           return { ...proposal, status, ...extra };
         },
       };
     }
+    if (request === './worktree-lab') {
+      return {
+        createLab: (branchName: string) => ({ branchName, path: tmpRoot }),
+        removeLab: () => ({ removed: true, pruned: true }),
+        isInsideLab: () => true,
+      };
+    }
     if (request === './autonomy-level') {
       return {
-        requiresApproval: () => requiresApproval,
         recordVerifiedSuccess: () => autonomyCalls.push('recordVerifiedSuccess'),
         recordMergeSuccess: () => autonomyCalls.push('recordMergeSuccess'),
         recordMergeFailure: () => autonomyCalls.push('recordMergeFailure'),
@@ -131,6 +139,8 @@ async function main() {
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordVerifiedSuccess').length, 1);
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, 0);
     assert.ok(updates.some((item) => item.id === 'proposal-pass' && item.status === 'measured'));
+    assert.ok(!updates.some((item) => item.status === 'verifying'));
+    assert.ok(updates.some((item) => item.status === 'implementing' && item.extra?.verification_phase === 'running'));
 
     verificationOverall = false;
     llmText = '종합 판정: FAIL\n보안 문제: FAIL';
@@ -140,21 +150,20 @@ async function main() {
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeFailure').length, 1);
     assert.ok(updates.some((item) => item.id === 'proposal-fail' && item.status === 'implementing'));
 
-    await verifier.mergeVerifiedProposal('proposal-merge');
-    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeSuccess').length, 1);
-    assert.ok(updates.some((item) => item.id === 'proposal-merge' && item.status === 'adopted'));
-
+    await assert.rejects(
+      () => verifier.mergeVerifiedProposal('proposal-merge'),
+      /direct_main_merge_retired/,
+    );
     await assert.rejects(
       () => verifier.mergeBranch('conflict-branch', 'conflict-fixture'),
-      /Automatic merge failed|CONFLICT/,
+      /direct_main_merge_retired/,
     );
-    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeFailure').length, 2);
-    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, 0);
-    assert.ok(gitCommands.some((cmd) => cmd === 'merge --abort'));
+    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeSuccess').length, 0);
+    assert.ok(!updates.some((item) => item.id === 'proposal-merge' && item.status === 'adopted'));
+    assert.ok(!gitCommands.some((cmd) => cmd.startsWith('merge ')));
 
     verificationOverall = true;
     llmText = '종합 판정: PASS\n1. 문법 정확성: PASS';
-    requiresApproval = false;
     proposal = {
       ...proposal,
       branch: 'conflict-branch',
@@ -169,6 +178,12 @@ async function main() {
       mergeFailuresBefore,
     );
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, errorsBefore);
+
+    proposal = { ...proposal, status: 'archived' };
+    await assert.rejects(
+      () => verifier.triggerVerification('proposal-archived', 'conflict-branch'),
+      /proposal_not_implementing/,
+    );
 
     console.log('✅ darwin verifier autonomy recovery smoke ok');
   } finally {

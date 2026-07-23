@@ -116,11 +116,6 @@ interface ExtractedFile {
   content: string;
 }
 
-interface StashState {
-  created: boolean;
-  label: string | null;
-}
-
 interface SyntaxCheckResult {
   path: string;
   ok: boolean;
@@ -175,10 +170,16 @@ function _sanitizeImplementationOutputForRecovery(value: unknown): string {
 function _assertProposalCleanForImplementation(proposalId: string, proposal: ProposalRecord): void {
   if (!_hasReasoningLeak(proposal.proposal) && !_hasReasoningLeak(proposal.prototype)) return;
 
-  proposalStoreTyped.updateStatus(proposalId, 'manual_review', {
+  const evidence = {
+    reason: 'reasoning_leak_detected',
     error: 'reasoning_leak_detected',
     reasoning_leak_detected_at: new Date().toISOString(),
-  });
+  };
+  if (proposalStoreTyped.transitionProposal) {
+    proposalStoreTyped.transitionProposal(proposalId, 'archived', evidence);
+  } else {
+    proposalStoreTyped.updateStatus(proposalId, 'manual_review', evidence);
+  }
   throw new Error(`proposal contains reasoning leak: ${proposalId}`);
 }
 
@@ -297,16 +298,8 @@ function _getCurrentBranch() {
   return _runGit(['rev-parse', '--abbrev-ref', 'HEAD']);
 }
 
-function _isCleanWorktree() {
-  return _runGit(['status', '--porcelain']) === '';
-}
-
 function _sanitizeBranchName(proposalId: string): string {
   return `darwin/${String(proposalId).replace(/[^a-zA-Z0-9/_-]+/g, '-').slice(0, 96)}`;
-}
-
-function _createStashLabel(proposalId: string | null | undefined): string {
-  return `darwin-auto-${String(proposalId || 'unknown').replace(/[^a-zA-Z0-9._-]+/g, '-')}`;
 }
 
 function _extractTargetTeam(proposal: ProposalRecord = {}): string {
@@ -358,26 +351,6 @@ function _normalizeRepoPath(
     throw new Error(`output_path_not_allowed:${filePath}`);
   }
   return clean;
-}
-
-function _stashPushIfNeeded(proposalId: string): StashState {
-  if (_isCleanWorktree()) return { created: false, label: null };
-  const label = _createStashLabel(proposalId);
-  _runGit(['stash', 'push', '-u', '-m', label]);
-  return { created: true, label };
-}
-
-function _stashPopIfNeeded(stashState: StashState | null): void {
-  if (!stashState?.created || !stashState.label) return;
-  const stashLabel = stashState.label;
-  const stashList = _runGit(['stash', 'list']);
-  const line = String(stashList || '')
-    .split('\n')
-    .find((entry) => entry.includes(stashLabel));
-  if (!line) return;
-  const stashRef = String(line.split(':')[0] || '').trim();
-  if (!stashRef) return;
-  _runGit(['stash', 'pop', stashRef]);
 }
 
 function _deleteBranchIfExists(branchName: string | null | undefined): void {
@@ -683,7 +656,12 @@ ${JSON.stringify(proposal.verification || {})}`,
     } as AlarmPayload);
 
     const verifier = require('./verifier');
-    setImmediate(() => verifier.triggerVerification(proposalId, branchName));
+    setImmediate(() => {
+      Promise.resolve(verifier.triggerVerification(proposalId, branchName)).catch((error: unknown) => {
+        autonomyLevelTyped.recordError(error);
+        logger.error(`검증 시작 실패: ${proposalId} -> ${toErrorMessage(error)}`);
+      });
+    });
     return { ok: true, branchName, changedFiles, syntaxChecks };
   } catch (error) {
     const errorMessage = toErrorMessage(error);
@@ -697,12 +675,8 @@ ${JSON.stringify(proposal.verification || {})}`,
           branch: branchName,
           error: errorMessage,
         });
-      } catch {
-        proposalStoreTyped.updateStatus(proposalId, 'archived', {
-          archive_reason: 'implementation_failed',
-          branch: branchName,
-          error: errorMessage,
-        });
+      } catch (transitionError) {
+        logger.error(`상태 전이 실패: ${proposalId} -> ${toErrorMessage(transitionError)}`);
       }
     } else {
       proposalStoreTyped.updateStatus(proposalId, 'archived', {

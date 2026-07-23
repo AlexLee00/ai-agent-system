@@ -371,6 +371,7 @@ export async function handleTool(name, params) {
 }
 
 const PORT = Number(argValue('port', DEFAULT_PORT));
+const HOST = String(argValue('host', process.env.CLAUDE_REFACTOR_MCP_HOST || '127.0.0.1'));
 const IS_SMOKE = process.argv.includes('--smoke') || process.argv.includes('--json');
 const IS_DIRECT_RUN = Boolean(process.argv[1]) && pathToFileURL(process.argv[1]).href === import.meta.url;
 
@@ -402,6 +403,7 @@ if (IS_DIRECT_RUN && IS_SMOKE) {
     console.log(JSON.stringify({
       ok: true,
       service: 'claude-refactor-mcp',
+      host: HOST,
       port: PORT,
       tools: CLAUDE_REFACTOR_MCP_TOOLS.map((t) => t.name),
       hubReachable: health.ok,
@@ -412,7 +414,7 @@ if (IS_DIRECT_RUN && IS_SMOKE) {
     console.error(`[claude-refactor-mcp] server error: ${err.message}`);
     process.exit(1);
   });
-  server.listen(PORT, () => {
-    console.log(`[claude-refactor-mcp] listening on :${PORT}`);
+  server.listen(PORT, HOST, () => {
+    console.log(`[claude-refactor-mcp] listening on http://${HOST}:${PORT}`);
   });
 }

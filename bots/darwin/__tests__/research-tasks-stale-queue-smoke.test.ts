@@ -98,6 +98,10 @@ async function main() {
     const taskApi = require(tasksPath);
     const now = '2026-05-25T02:00:00.000Z';
 
+    assert.throws(() => taskApi.createTask({ id: '../escape', type: 'github_analysis' }), /invalid_task_id/);
+    assert.throws(() => taskApi._testOnly_safeSkillTarget('../outside', 'safe'), /invalid_skill_category/);
+    assert.throws(() => taskApi._testOnly_safeSkillTarget('shared', '../outside'), /invalid_skill_name/);
+
     const normalPending = await taskApi.getPendingTasks({ now, staleRunningMs: 60 * 60 * 1000 });
     assert.deepStrictEqual(normalPending.map((task: { id: string }) => task.id), ['TASK-PENDING']);
 

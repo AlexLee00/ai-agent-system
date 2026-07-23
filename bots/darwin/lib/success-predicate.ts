@@ -4,6 +4,7 @@ const fs: typeof import('fs') = require('fs');
 const path: typeof import('path') = require('path');
 const { execFileSync }: typeof import('child_process') = require('child_process');
 const env: { PROJECT_ROOT: string } = require('../../../packages/core/lib/env');
+const { isInsideLab }: { isInsideLab: (cwd: string) => boolean } = require('./worktree-lab');
 
 interface PredicateExpect {
   exitCode?: number;
@@ -62,7 +63,12 @@ const UNSAFE_COMMAND_PATTERNS = [
   /\brm\s+-rf\b/i,
   /\bshutdown\b/i,
   /\breboot\b/i,
+  /[;&|><`$()\r\n]/,
+  /(^|\s)\.\.(?:\/|\\|\s|$)/,
+  /(^|\s)\/path\/to(?:\/|\s|$)/i,
 ];
+const ALLOWED_EXECUTABLES = new Set(['node', 'npm', 'test', 'true', 'false', 'printf']);
+const SAFE_NPM_SCRIPT = /^(?:test|smoke|check|typecheck|lint|build)(?::[A-Za-z0-9._-]+)*$/;
 
 function toObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -117,7 +123,102 @@ function validateCommandSafety(command: string): string | null {
   if (!command) return 'command_missing';
   if (command.length > 500) return 'command_too_long';
   if (UNSAFE_COMMAND_PATTERNS.some((pattern) => pattern.test(command))) return 'unsafe_command';
+  const tokens = parseCommandTokens(command);
+  if (!tokens || tokens.length === 0) return 'command_parse_failed';
+  const executable = tokens[0];
+  if (!ALLOWED_EXECUTABLES.has(executable)) return 'executable_not_allowed';
+  if (tokens.slice(1).some((token) => {
+    const value = token.includes('=') ? token.slice(token.indexOf('=') + 1) : token;
+    return path.isAbsolute(value) || value.split(/[\\/]/).includes('..');
+  })) return 'path_escape_not_allowed';
+  if (executable === 'node') {
+    if (tokens[1] !== '--check' || tokens.length !== 3) return 'node_mode_not_allowed';
+    if (tokens.slice(2).some((token) => token.startsWith('-'))) return 'node_argument_not_allowed';
+  }
+  if (executable === 'npm') {
+    const npmError = validateNpmCommand(tokens);
+    if (npmError) return npmError;
+  }
   return null;
+}
+
+function validateNpmCommand(tokens: string[]): string | null {
+  let index = 1;
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token === '--prefix') {
+      if (!tokens[index + 1]) return 'npm_prefix_missing';
+      index += 2;
+      continue;
+    }
+    if (token.startsWith('--prefix=')) {
+      index += 1;
+      continue;
+    }
+    if (token === '-s' || token === '--silent') {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  const operation = tokens[index];
+  if (operation === 'test') {
+    return tokens.slice(index + 1).every((token) => token === '-s' || token === '--silent')
+      ? null
+      : 'npm_test_arguments_not_allowed';
+  }
+  if (operation !== 'run') return 'npm_operation_not_allowed';
+  index += 1;
+  while (tokens[index] === '-s' || tokens[index] === '--silent') index += 1;
+  const script = tokens[index];
+  if (!script || !SAFE_NPM_SCRIPT.test(script)) return 'npm_script_not_allowed';
+  return index === tokens.length - 1 ? null : 'npm_script_arguments_not_allowed';
+}
+
+function parseCommandTokens(command: string): string[] | null {
+  const tokens: string[] = [];
+  const matcher = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^']*)'|([^\s]+)/g;
+  let match: RegExpExecArray | null;
+  let consumed = '';
+  while ((match = matcher.exec(command)) !== null) {
+    const gap = command.slice(consumed.length, match.index);
+    if (gap && !/^\s+$/.test(gap)) return null;
+    const token = match[1] !== undefined
+      ? match[1].replace(/\\(["\\])/g, '$1')
+      : match[2] !== undefined
+        ? match[2]
+        : match[3];
+    tokens.push(token);
+    consumed = command.slice(0, matcher.lastIndex);
+  }
+  if (command.slice(consumed.length).trim()) return null;
+  return tokens;
+}
+
+function commandPathContainmentError(command: string, cwd: string): string | null {
+  const tokens = parseCommandTokens(command) || [];
+  let target = '';
+  if (tokens[0] === 'node') target = tokens[2] || '';
+  if (tokens[0] === 'npm') {
+    const prefixIndex = tokens.indexOf('--prefix');
+    if (prefixIndex >= 0) target = tokens[prefixIndex + 1] || '';
+    if (!target) {
+      const prefixArg = tokens.find((token) => token.startsWith('--prefix='));
+      if (prefixArg) target = prefixArg.slice('--prefix='.length);
+    }
+  }
+  if (!target) return null;
+  try {
+    const realCwd = fs.realpathSync(cwd);
+    const realTarget = fs.realpathSync(path.resolve(realCwd, target));
+    if (realTarget !== realCwd && !realTarget.startsWith(`${realCwd}${path.sep}`)) {
+      return 'command_path_outside_lab';
+    }
+    return null;
+  } catch {
+    return 'command_path_missing';
+  }
 }
 
 function validateSuccessPredicate(raw: unknown): PredicateValidationResult {
@@ -176,7 +277,8 @@ function truncate(value: unknown): string {
 function runOneAssertion(assertion: PredicateAssertion, cwd: string, timeoutMs: number): AssertionResult {
   const started = Date.now();
   const safetyError = validateCommandSafety(assertion.command);
-  if (safetyError) {
+  const pathError = safetyError ? null : commandPathContainmentError(assertion.command, cwd);
+  if (safetyError || pathError) {
     return {
       name: assertion.name,
       command: assertion.command,
@@ -185,7 +287,7 @@ function runOneAssertion(assertion: PredicateAssertion, cwd: string, timeoutMs: 
       exitCode: null,
       stdout: '',
       stderr: '',
-      error: safetyError,
+      error: safetyError || pathError,
       expect: assertion.expect,
     };
   }
@@ -194,13 +296,21 @@ function runOneAssertion(assertion: PredicateAssertion, cwd: string, timeoutMs: 
   let stderr = '';
   let exitCode = 0;
   try {
-    stdout = String(execFileSync(assertion.command, {
+    const [executable, ...args] = parseCommandTokens(assertion.command) || [];
+    stdout = String(execFileSync(executable, args, {
       cwd,
-      shell: '/bin/bash',
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: timeoutMs,
       maxBuffer: 1024 * 1024,
+      env: {
+        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+        HOME: process.env.HOME || '',
+        TMPDIR: process.env.TMPDIR || '/tmp',
+        NODE_ENV: 'test',
+        CI: '1',
+        NO_COLOR: '1',
+      },
     }) || '');
   } catch (error) {
     const err = error as { status?: number; stdout?: Buffer | string; stderr?: Buffer | string; signal?: string; message?: string };
@@ -227,8 +337,24 @@ function runOneAssertion(assertion: PredicateAssertion, cwd: string, timeoutMs: 
 
 function runSuccessPredicate(
   rawPredicate: unknown,
-  options: { cwd: string; now?: () => number } = { cwd: env.PROJECT_ROOT }
+  options: { cwd: string; now?: () => number; verifyLab?: boolean } = { cwd: env.PROJECT_ROOT }
 ) {
+  let executableLab = false;
+  try {
+    const realCwd = fs.realpathSync(options.cwd);
+    executableLab = isInsideLab(realCwd) && fs.existsSync(path.join(realCwd, '.git'));
+  } catch {}
+  if (options.verifyLab !== false && !executableLab) {
+    return {
+      ok: false,
+      validation: { ok: false, predicate: null, errors: ['lab_cwd_required'] },
+      predicate: null,
+      assertionResults: [],
+      predicate_results: [],
+      budget: null,
+      failureReason: 'lab_cwd_required',
+    };
+  }
   const validation = validateSuccessPredicate(rawPredicate);
   if (!validation.ok || !validation.predicate) {
     return {
@@ -310,7 +436,8 @@ function buildPredicateGenerationPrompt(paper: Record<string, unknown>, proposal
     'Return JSON only. No markdown.',
     'Schema: {"assertions":[{"name":"...","command":"...","expect":{"exitCode":0}}],"targetMetric":{"description":"...","source":"..."},"budget":{"maxWallMs":300000,"maxLlmCalls":20}}',
     'Create 3 to 6 binary assertions that reuse existing repo checks/smokes where possible.',
-    'Commands must run from the repository root or Darwin lab cwd and must not mutate DB, launchd, git remote, or secrets.',
+    'Commands run from the Darwin lab cwd. Use one command per assertion; no cd, shell operators, absolute paths, network calls, DB, launchd, git, or secrets.',
+    'Allowed forms only: node --check <relative-file>, npm [--prefix <relative-dir>] run [-s] <test|smoke|check|typecheck|lint|build script>, npm test, test, true, false, printf.',
     `Paper title: ${String(paper.title || '')}`,
     `Paper summary: ${String(paper.korean_summary || paper.summary || '').slice(0, 1200)}`,
     `Proposal: ${String(proposal || '').slice(0, 2000)}`,

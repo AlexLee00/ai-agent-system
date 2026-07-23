@@ -87,6 +87,9 @@ interface WeeklyReviewStats {
   adopt_weekly_cap: number;
   adopt_enabled: boolean;
   adopt_dry_run: boolean;
+  consistency_active_duplicates: number;
+  consistency_implementing_without_branch: number;
+  consistency_stale_implementations: number;
 }
 
 interface CliOptions {
@@ -399,6 +402,9 @@ async function collectWeeklyStats(options: { triageDryRun?: boolean } = {}): Pro
     dryRun: options.triageDryRun !== false,
   });
   const adoptReview = adoptPipeline.selectAdoptCandidates();
+  const consistency = typeof proposalStore.auditProposalConsistency === "function"
+    ? proposalStore.auditProposalConsistency()
+    : { activeDuplicatePapers: [], implementingWithoutBranch: [], staleImplementations: [] };
 
   const total = Number(cycle.total ?? 0);
   const successes = Number(cycle.successes ?? 0);
@@ -469,12 +475,26 @@ async function collectWeeklyStats(options: { triageDryRun?: boolean } = {}): Pro
     adopt_weekly_cap: Number(adoptReview.cap ?? 0),
     adopt_enabled: process.env.DARWIN_ADOPT_ENABLED === "true",
     adopt_dry_run: process.env.DARWIN_ADOPT_ENABLED !== "true",
+    consistency_active_duplicates: Number(consistency.activeDuplicatePapers?.length ?? 0),
+    consistency_implementing_without_branch: Number(consistency.implementingWithoutBranch?.length ?? 0),
+    consistency_stale_implementations: Number(consistency.staleImplementations?.length ?? 0),
   };
 }
 
 async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Promise<void> {
   log(options, "[darwin-weekly-review] 주간 리뷰 수집 시작");
   const stats = await collectWeeklyStats({ triageDryRun: options.dryRun || options.triageDryRun });
+  const adoptRuns: Array<Record<string, unknown>> = [];
+  if (!options.dryRun && process.env.DARWIN_ADOPT_ENABLED === "true") {
+    const review = adoptPipeline.selectAdoptCandidates();
+    for (const candidate of review.candidates || []) {
+      try {
+        adoptRuns.push(await adoptPipeline.runAdoptForCandidate(candidate, { enabled: true, dryRun: false }));
+      } catch (error) {
+        adoptRuns.push({ ok: false, proposalId: candidate?.proposal?.id || null, error: String((error as Error)?.message || error) });
+      }
+    }
+  }
 
   const msg = `
 📅 다윈 주간 리뷰 (${stats.week})
@@ -498,6 +518,10 @@ async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Pro
 
 🧾 Adopt review:
   후보: ${stats.adopt_candidates}/${stats.adopt_weekly_cap} | blocked: ${stats.adopt_blocked} | enabled: ${stats.adopt_enabled} | dryRun: ${stats.adopt_dry_run}
+  실행: ${adoptRuns.length} | adopted: ${adoptRuns.filter((item) => item.adopted === true).length}
+
+🩺 Proposal consistency:
+  active duplicates: ${stats.consistency_active_duplicates} | implementing without branch: ${stats.consistency_implementing_without_branch} | stale implementing: ${stats.consistency_stale_implementations}
 
 🧠 Self-Rewarding DPO:
   preferred: ${stats.preferred_pairs} | rejected: ${stats.rejected_pairs}
@@ -547,6 +571,7 @@ async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Pro
       dryRun: options.dryRun,
       stats,
       payload,
+      adoptRuns,
       alarmSent: !options.dryRun,
     }, null, 2));
   }

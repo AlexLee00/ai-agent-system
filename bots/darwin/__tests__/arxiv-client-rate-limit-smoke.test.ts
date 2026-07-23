@@ -84,10 +84,29 @@ async function main() {
     };
 
     client._testOnly_resetRequestThrottle();
-    const retried = await client._testOnly_fetchWithRetry('http://example.test/arxiv', 'rate-limit-smoke');
+    let releaseFirst429: (() => void) | null = null;
+    const first429Seen = new Promise<void>((resolve) => {
+      releaseFirst429 = resolve;
+    });
+    (globalThis as unknown as { fetch: unknown }).fetch = async (url: string) => {
+      fetchCalls += 1;
+      if (url.includes('first') && fetchCalls === 1) {
+        releaseFirst429?.();
+        return mockResponse(false, 429, '2');
+      }
+      return mockResponse(true, 200);
+    };
+    const first = client._testOnly_fetchWithRetry('http://example.test/first', 'rate-limit-smoke');
+    await first429Seen;
+    const secondStartedAt = Date.now();
+    const second = await client._testOnly_fetchWithRetry('http://example.test/second', 'shared-cooldown-smoke');
+    const secondElapsedMs = Date.now() - secondStartedAt;
+    const retried = await first;
 
     assert.strictEqual(retried.ok, true);
-    assert.strictEqual(fetchCalls, 2);
+    assert.strictEqual(second.ok, true);
+    assert.ok(secondElapsedMs >= 1_700, `shared 429 cooldown must delay other requests, elapsed=${secondElapsedMs}`);
+    assert.strictEqual(fetchCalls, 3);
 
     console.log('✅ darwin arxiv rate-limit smoke ok');
   } finally {

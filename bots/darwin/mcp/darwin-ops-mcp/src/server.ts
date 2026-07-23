@@ -71,6 +71,9 @@ async function callDarwinOpsTool(name: string, args: Record<string, unknown> = {
   const tel = deps.telemetry || telemetry;
   if (name === 'cycle_status') {
     const proposals = store.listProposals();
+    const consistency = typeof store.auditProposalConsistency === 'function'
+      ? store.auditProposalConsistency()
+      : { activeDuplicatePapers: [], implementingWithoutBranch: [], staleImplementations: [] };
     const states = new Map<string, number>();
     for (const proposal of proposals) {
       const state = String(store.normalizeProposalState(proposal.status));
@@ -80,6 +83,7 @@ async function callDarwinOpsTool(name: string, args: Record<string, unknown> = {
       ok: true,
       proposalCount: proposals.length,
       states: Object.fromEntries(states.entries()),
+      consistency,
       telemetry: tel.tailTelemetry(safeLimit(args.telemetryLimit, 20, 100)),
     };
   }

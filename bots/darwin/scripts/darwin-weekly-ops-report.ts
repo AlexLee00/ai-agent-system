@@ -21,6 +21,7 @@ const {
   formatLearnReportBlock,
 } = require(path.join(PROJECT_ROOT, "bots/darwin/lib/learn-report"));
 const telemetry = require(path.join(PROJECT_ROOT, "bots/darwin/lib/telemetry"));
+const proposalStore = require(path.join(PROJECT_ROOT, "bots/darwin/lib/proposal-store.ts"));
 
 interface QueryResultRow {
   [key: string]: unknown;
@@ -80,6 +81,9 @@ interface WeeklyOpsStats {
   scanner_avg_duration_sec: number;
   scanner_keyword_evolution_count: number;
   learn_report: ReturnType<typeof collectLearnReport>;
+  consistency_active_duplicates: number;
+  consistency_implementing_without_branch: number;
+  consistency_stale_implementations: number;
 }
 
 interface CliOptions {
@@ -313,6 +317,9 @@ async function collectStats(): Promise<WeeklyOpsStats> {
   }
   const scannerKeywordEvolutionCount = Number(scanner.scanner_keyword_evolution_count ?? 0);
   const learnReport = collectLearnReport({ keywordEvolutionCount: scannerKeywordEvolutionCount });
+  const consistency = typeof proposalStore.auditProposalConsistency === "function"
+    ? proposalStore.auditProposalConsistency()
+    : { activeDuplicatePapers: [], implementingWithoutBranch: [], staleImplementations: [] };
 
   return {
     date: new Date().toISOString().slice(0, 10),
@@ -354,6 +361,9 @@ async function collectStats(): Promise<WeeklyOpsStats> {
     scanner_avg_duration_sec: Math.round(Number(scanner.scanner_avg_duration_sec ?? 0)),
     scanner_keyword_evolution_count: scannerKeywordEvolutionCount,
     learn_report: learnReport,
+    consistency_active_duplicates: Number(consistency.activeDuplicatePapers?.length ?? 0),
+    consistency_implementing_without_branch: Number(consistency.implementingWithoutBranch?.length ?? 0),
+    consistency_stale_implementations: Number(consistency.staleImplementations?.length ?? 0),
   };
 }
 
@@ -394,6 +404,9 @@ async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Pro
   제안/검증: ${stats.scanner_proposals}/${stats.scanner_verified} | 평균 소요: ${stats.scanner_avg_duration_sec}초
 
 ${learnBlock}
+
+🩺 Proposal consistency:
+  active duplicates: ${stats.consistency_active_duplicates} | implementing without branch: ${stats.consistency_implementing_without_branch} | stale implementing: ${stats.consistency_stale_implementations}
 
 ⚠️ 지난 7일 원칙 위반: ${stats.violations}회
 `.trim();
