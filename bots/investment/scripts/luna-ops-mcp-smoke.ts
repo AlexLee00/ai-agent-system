@@ -2,8 +2,44 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { LUNA_OPS_MCP_TOOLS, callLunaOpsTool } from '../mcp/luna-ops-mcp/src/server.ts';
+import {
+  LUNA_OPS_MCP_TOOLS,
+  callLunaOpsTool,
+  installShutdownHandlers,
+  startServer,
+} from '../mcp/luna-ops-mcp/src/server.ts';
+
+async function assertServerLifecycle() {
+  const started = await startServer({ port: 0 });
+  try {
+    const response = await fetch(`http://${started.host}:${started.port}/health`);
+    const health = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(health.ok, true);
+    assert.equal(health.mode, 'read_only');
+  } finally {
+    await new Promise((resolve) => started.server.close(resolve));
+  }
+
+  const processRef = new EventEmitter();
+  const exits = [];
+  processRef.exit = (code) => exits.push(code);
+  let closeCalls = 0;
+  const server = {
+    close(callback) {
+      closeCalls += 1;
+      callback();
+    },
+    closeIdleConnections() {},
+  };
+  installShutdownHandlers(server, { processRef, timeoutMs: 100 });
+  processRef.emit('SIGTERM');
+  processRef.emit('SIGINT');
+  assert.equal(closeCalls, 1);
+  assert.deepEqual(exits, [0]);
+}
 
 export async function runLunaOpsMcpSmoke() {
   const toolNames = LUNA_OPS_MCP_TOOLS.map((tool) => tool.name);
@@ -27,6 +63,7 @@ export async function runLunaOpsMcpSmoke() {
   const phase5Plan = await callLunaOpsTool('luna_phase5_shadow_plan', { fixture: true });
   assert.equal(phase5Plan.noLiveTradeExecution, true);
   assert.equal(phase5Plan.summary.mcpTools, 12);
+  await assertServerLifecycle();
   return {
     ok: true,
     tools: toolNames,

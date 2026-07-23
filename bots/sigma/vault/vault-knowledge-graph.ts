@@ -1,4 +1,4 @@
-import { KNOWLEDGE_TYPES, resolveVaultTier } from './vault-tiering.js';
+import { KNOWLEDGE_TYPES, resolveVaultTier } from './vault-tiering.ts';
 import {
   ONTOLOGY_OBJECT_TYPES,
   resolveOntologyObjectType,

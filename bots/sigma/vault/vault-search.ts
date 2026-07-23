@@ -11,8 +11,8 @@ import {
   normalizeCoordFilters,
 } from './layer-router.ts';
 import { normalizeLibraryCoords } from '../shared/library-coords.ts';
-import { KNOWLEDGE_TYPES, resolveVaultTier } from './vault-tiering.js';
-import { buildVaultKnowledgeGraph, queryRelatedRecordsFromSeeds } from './vault-knowledge-graph.js';
+import { KNOWLEDGE_TYPES, resolveVaultTier } from './vault-tiering.ts';
+import { buildVaultKnowledgeGraph, queryRelatedRecordsFromSeeds } from './vault-knowledge-graph.ts';
 
 const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
