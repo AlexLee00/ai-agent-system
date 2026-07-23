@@ -234,6 +234,15 @@ async function test_safe_deferred_cycle_uses_soft_operational_status() {
   assert.strictEqual(runner.heartbeatStatusForCycleResult(safeDeferred), 'warn');
   assert.strictEqual(runner.exitCodeForCycleResult(safeDeferred), 0);
 
+  const dirtyWorktreeDeferred = {
+    ok: false,
+    blocked: true,
+    mode: 'active',
+    reason: 'dirty_worktree_in_scope',
+  };
+  assert.strictEqual(runner.heartbeatStatusForCycleResult(dirtyWorktreeDeferred), 'warn');
+  assert.strictEqual(runner.exitCodeForCycleResult(dirtyWorktreeDeferred), 0);
+
   const unsafeDeferred = {
     ok: false,
     mode: 'active',

@@ -3090,6 +3090,7 @@ async function writeRefactorHeartbeat(context, status, meta = {}) {
 function isSafeDeferredCycleResult(result) {
   if (!result || result.mode !== 'active') return false;
   if (result.reason === 'no_active_candidates') return true;
+  if (result.blocked === true && result.reason === 'dirty_worktree_in_scope') return true;
 
   const active = result.active;
   if (!active || active.applied) return false;
@@ -3206,7 +3207,7 @@ async function runRefactorCycle(options = {}) {
           gitStatus: scopedDirty,
           fullGitStatus: initialGitStatus,
         };
-        result.heartbeat = await writeRefactorHeartbeat(context, 'error', {
+        result.heartbeat = await writeRefactorHeartbeat(context, 'warn', {
           stage: 'blocked',
           reason: result.reason,
           dirtyScope: context.dirtyScope,
