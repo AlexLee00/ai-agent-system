@@ -267,7 +267,7 @@ async function main() {
     if (!lockAcquired) {
       logStageFailure('LOCK_CONFLICT', '픽코 락 획득 실패', { mode: MODE, waitedMs: MANUAL_PICKKO_LOCK_WAIT_MS });
       log('⚠️ 픽코 락 획득 실패 — 자동 에이전트 점유가 길어 수동 등록을 시작하지 못했습니다.');
-      process.exit(1);
+      throw buildStageError('LOCK_CONFLICT', '픽코 락 획득 실패');
     }
     log(`🔒 픽코 락 획득 (manual, ttl=${Math.floor(MANUAL_PICKKO_LOCK_TTL_MS / 60000)}m)`);
 

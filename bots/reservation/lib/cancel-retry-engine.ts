@@ -44,6 +44,11 @@ function baseDelayMinutes(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 10;
 }
 
+function runningLeaseMinutes(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.SKA_CANCEL_RETRY_RUNNING_LEASE_MINUTES || 30);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30;
+}
+
 function phoneRaw(booking: Record<string, any>): string {
   return String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
 }
@@ -206,6 +211,44 @@ export function createCancelRetryEngine({
     }
   }
 
+  async function claimDue(limit = 5) {
+    if (!enabled(env)) return [];
+    const safeLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.floor(Number(limit)) : 5;
+    try {
+      const result = await db.run(`
+        WITH due AS (
+          SELECT cancel_key
+          FROM cancel_retry_queue
+          WHERE (
+              status = 'pending'
+              AND next_retry_at <= NOW()
+            ) OR (
+              status = 'running'
+              AND updated_at < NOW() - ($2::int * INTERVAL '1 minute')
+            )
+          ORDER BY next_retry_at ASC NULLS FIRST, created_at ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT $1
+        )
+        UPDATE cancel_retry_queue AS queue
+        SET status = 'running',
+            attempts = queue.attempts + 1,
+            updated_at = NOW()
+        FROM due
+        WHERE queue.cancel_key = due.cancel_key
+        RETURNING queue.*
+      `, [safeLimit, runningLeaseMinutes(env)]);
+      return Array.isArray(result?.rows) ? result.rows : [];
+    } catch (error) {
+      if (isMissingTableError(error)) {
+        log('ℹ️ [취소 재시도 큐] 테이블 미적용 — claim 생략');
+        return [];
+      }
+      log(`⚠️ [취소 재시도 큐] claim 실패: ${safeErrorMessage(error)}`);
+      return [];
+    }
+  }
+
   async function processDueQueue({
     runPickkoCancel,
     limit = 3,
@@ -214,11 +257,11 @@ export function createCancelRetryEngine({
     limit?: number;
   }) {
     if (!enabled(env)) return { skipped: true, processed: 0, reason: 'disabled' };
-    const rows = await listDue(limit);
+    const rows = await claimDue(limit);
     let processed = 0;
     for (const row of rows) {
       const key = row.cancel_key;
-      const attempts = Number(row.attempts || 0) + 1;
+      const attempts = Number(row.attempts || 0);
       const reason = (row.reason || 'unknown') as CancelRetryReason;
       const booking = {
         bookingId: row.booking_id || null,
@@ -230,7 +273,6 @@ export function createCancelRetryEngine({
         room: row.room,
       };
       try {
-        await db.run(`UPDATE cancel_retry_queue SET status='running', attempts=$2, updated_at=NOW() WHERE cancel_key=$1`, [key, attempts]);
         const result = await runPickkoCancel(booking, key);
         processed += 1;
         if (result === 0) {
@@ -289,6 +331,7 @@ export function createCancelRetryEngine({
     recordFailure,
     markSucceeded,
     listDue,
+    claimDue,
     processDueQueue,
   };
 }
@@ -297,6 +340,7 @@ export const _testOnly = {
   enabled,
   maxAttempts,
   baseDelayMinutes,
+  runningLeaseMinutes,
   isMissingTableError,
   maskCancelKey,
 };

@@ -14,6 +14,10 @@ const { fail } = require('../../lib/cli');
 const { IS_OPS } = require('../../../../packages/core/lib/env');
 const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 const { buildReservationCliInsight } = require('../../lib/cli-insight');
+const {
+  PICKKO_REGISTER_FOLLOWUP_REQUIRED_CODE,
+  resolvePickkoRegisterOutcome,
+} = require('../../lib/pickko-register-contract');
 
 const ARGS = parseArgs(process.argv);
 
@@ -535,8 +539,16 @@ child.on('close', async (code: number | null) => {
           ? '등록과 네이버 차단까지 완료되었습니다.'
           : '등록은 완료되었지만 네이버 차단은 후속 확인이 필요합니다.',
     });
+    const outcome = resolvePickkoRegisterOutcome({
+      pickkoExitCode: code,
+      skipNaverBlock: SKIP_NAVER_BLOCK,
+      asyncNaverBlock: ASYNC_NAVER_BLOCK,
+      naverBlockExitCode,
+    });
     process.stdout.write(`${JSON.stringify({
-      success: naverBlockExitCode === null ? true : naverBlockExitCode === 0,
+      success: outcome.success,
+      pickkoRegistered: outcome.pickkoRegistered,
+      outcome: outcome.status,
       message,
       naverBlock: {
         skipped: SKIP_NAVER_BLOCK,
@@ -550,10 +562,11 @@ child.on('close', async (code: number | null) => {
         semanticHint,
       },
     })}\n`);
-    process.exit(naverBlockExitCode === null || naverBlockExitCode === 0 ? 0 : 1);
+    process.exit(outcome.exitCode);
   }
 
   const memoryQuery = buildRegisterMemoryQuery('failure');
+  const saveSubmitStarted = /PICKKO_SAVE_SUBMIT_STARTED/.test(outputBuf);
   const episodicHint = await registerMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
     limit: 2,
@@ -592,6 +605,8 @@ child.on('close', async (code: number | null) => {
   });
   process.stdout.write(`${JSON.stringify({
     success: false,
+    pickkoRegistered: saveSubmitStarted ? null : false,
+    outcome: saveSubmitStarted ? 'registration_verification_required' : 'failed',
     message: failureMessage,
     aiSummary,
     memoryHints: {
@@ -622,5 +637,5 @@ child.on('close', async (code: number | null) => {
     olderThanDays: 14,
     limit: 10,
   }).catch(() => {});
-  process.exit(1);
+  process.exit(saveSubmitStarted ? PICKKO_REGISTER_FOLLOWUP_REQUIRED_CODE : 1);
 });

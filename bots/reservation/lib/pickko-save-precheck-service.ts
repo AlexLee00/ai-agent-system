@@ -14,14 +14,16 @@ export function createPickkoSavePrecheckService({
     return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
   }
 
-  async function withSavePrecheckTimeout<T>(label: string, work: () => Promise<T>): Promise<T> {
+  async function withSavePrecheckTimeout<T>(label: string, work: (isActive: () => boolean) => Promise<T>): Promise<T> {
     const timeoutMs = getSavePrecheckStepTimeoutMs();
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    let active = true;
     try {
       return await Promise.race([
-        work(),
+        work(() => active),
         new Promise<T>((_resolve, reject) => {
           timeoutHandle = setTimeout(() => {
+            active = false;
             reject(buildStageError(
               'SAVE_PRECHECK_TIMEOUT',
               `${label} timeout after ${timeoutMs}ms`,
@@ -30,6 +32,7 @@ export function createPickkoSavePrecheckService({
         }),
       ]);
     } finally {
+      active = false;
       if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   }
@@ -304,30 +307,19 @@ export function createPickkoSavePrecheckService({
   }
 
   async function submitDraft(page: any) {
-    return withSavePrecheckTimeout('submitDraft', async () => {
+    return withSavePrecheckTimeout('submitDraft', async (isActive) => {
     log('💾 "작성하기" 버튼 클릭...');
 
-    const submitClicked = await page.evaluate(`
-      (() => {
-        const btn = document.querySelector('input[type="submit"][value="작성하기"]');
-        if (!btn) return false;
-        btn.click();
-        return true;
-      })()
-    `).catch(() => false);
-
-    if (!submitClicked) {
-      log('⚠️ 작성하기 버튼 미발견 → form.submit() 폴백');
-      await page.evaluate(`
-        (() => {
-          const form = document.querySelector('form');
-          if (form) HTMLFormElement.prototype.submit.call(form);
-        })()
-      `).catch(() => {});
+    const submitButton = await page.$('input[type="submit"][value="작성하기"]').catch(() => null);
+    if (!submitButton) {
+      throw buildStageError('SAVE_SUBMIT_CONTROL_MISSING', '저장 중단: 작성하기 버튼 미발견');
     }
+    if (!isActive()) return { submitClicked: false, aborted: true };
 
+    log('PICKKO_SAVE_SUBMIT_STARTED');
+    await submitButton.click();
     log('✅ 작성하기 클릭 완료');
-    return { submitClicked };
+    return { submitClicked: true };
     });
   }
 

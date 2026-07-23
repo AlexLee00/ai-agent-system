@@ -108,10 +108,6 @@ export function createKioskBlockFlowService(deps: CreateKioskBlockFlowServiceDep
         }
         return { ok: false, applied: false, reason: 'slot_click_failed' };
       }
-      if (selectedStart !== start) {
-        log(`  시작시간 조정: ${start} → ${selectedStart} (종료시간 ${end} 유지)`);
-      }
-
       const selectedStartMin = toClockMinutes(selectedStart);
       const requestedStartMin = toClockMinutes(start);
       const roundedEndMin = toClockMinutes(endRounded);
@@ -119,7 +115,7 @@ export function createKioskBlockFlowService(deps: CreateKioskBlockFlowServiceDep
         selectedStartMin == null ||
         requestedStartMin == null ||
         roundedEndMin == null ||
-        Math.abs(selectedStartMin - requestedStartMin) > 90 ||
+        selectedStartMin !== requestedStartMin ||
         selectedStartMin >= roundedEndMin
       ) {
         log(`⚠️ 슬롯 안전장치 발동: 요청=${start} 선택=${selectedStart} 종료=${endRounded}`);

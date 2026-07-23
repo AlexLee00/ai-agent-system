@@ -17,7 +17,16 @@ function createDb() {
     calls,
     async run(sql, params = []) {
       calls.push({ sql, params });
-      if (/INSERT INTO cancel_retry_queue/i.test(sql)) {
+      if (/WITH due AS/i.test(sql) && /FOR UPDATE SKIP LOCKED/i.test(sql)) {
+        const claimed = Array.from(rows.values())
+          .filter((row) => row.status === 'pending')
+          .slice(0, Number(params[0] || 5));
+        for (const row of claimed) {
+          row.status = 'running';
+          row.attempts = Number(row.attempts || 0) + 1;
+        }
+        return { rowCount: claimed.length, rows: claimed };
+      } else if (/INSERT INTO cancel_retry_queue/i.test(sql)) {
         rows.set(params[0], {
           cancel_key: params[0],
           booking_id: params[1],
@@ -32,10 +41,6 @@ function createDb() {
           last_exit_code: params[10],
           last_error: params[11],
         });
-      } else if (/status='running'/.test(sql)) {
-        const row = rows.get(params[0]);
-        row.status = 'running';
-        row.attempts = params[1];
       } else if (/status = 'succeeded'/.test(sql)) {
         const row = rows.get(params[0]);
         if (row) row.status = 'succeeded';
@@ -110,6 +115,11 @@ async function main() {
   });
   assert.equal(result.processed >= 1, true);
   assert.equal(db.rows.get('cancelid|b3').status, 'exhausted');
+  const claimCall = db.calls.find((call) => /WITH due AS/i.test(call.sql));
+  assert.ok(claimCall, 'queue processor must atomically claim due rows');
+  assert.match(claimCall.sql, /FOR UPDATE SKIP LOCKED/i);
+  assert.match(claimCall.sql, /status = 'running'/i);
+  assert.match(claimCall.sql, /updated_at < NOW\(\) -/i);
 
   await engine.recordFailure({ booking: { ...booking, bookingId: 'b4' }, cancelKey: 'cancel_done|01012345678|2026-07-03|10:00|11:00|A1', output: 'TimeoutError', exitCode: 1 });
   await engine.processDueQueue({

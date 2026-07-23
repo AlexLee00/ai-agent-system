@@ -138,21 +138,31 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
     return scrapeBookingStatusList(page, sourceUrl, { ...options, statusCode: 'RC03' });
   }
 
-  async function readListState(page: any): Promise<{ rowCount: number; noDataVisible: boolean; dateFilter: string }> {
+  async function readListState(page: any): Promise<{ rowCount: number; noDataVisible: boolean; dateFilter: string; blockedReason: string | null }> {
     return page.evaluate((selectors: { row: string; empty: string }) => {
       const rows = document.querySelectorAll(selectors.row);
       const noData = document.querySelector(selectors.empty);
       const noDataVisible = !!noData && (noData as HTMLElement).offsetParent !== null;
+      const bodyText = String(document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
+      const loginControl = document.querySelector('input[type="password"], a[href*="login"], button[name*="login"]');
+      const loginRequired = /nidlogin|\/login(?:\.|\/|\?|$)/i.test(String(location.href || ''))
+        || (!!loginControl && /로그인|login/i.test(String((loginControl as HTMLElement).textContent || bodyText)));
+      const securityBlocked = /보안문자|captcha|접근이 제한|비정상적인 접근|오류가 발생/i.test(bodyText);
       let dateFilter = '';
       try {
         dateFilter = new URL(location.href).searchParams.get('dateFilter') || '';
       } catch (_error) {}
-      return { rowCount: rows.length, noDataVisible, dateFilter };
+      return {
+        rowCount: rows.length,
+        noDataVisible,
+        dateFilter,
+        blockedReason: loginRequired ? 'login_required' : (securityBlocked ? 'security_or_error_page' : null),
+      };
     }, { row: LIST_ROW_SELECTOR, empty: LIST_EMPTY_SELECTOR });
   }
 
-  async function waitForListState(page: any): Promise<{ rowCount: number; noDataVisible: boolean; dateFilter: string }> {
-    let lastState = { rowCount: 0, noDataVisible: false, dateFilter: '' };
+  async function waitForListState(page: any): Promise<{ rowCount: number; noDataVisible: boolean; dateFilter: string; blockedReason: string | null }> {
+    let lastState = { rowCount: 0, noDataVisible: false, dateFilter: '', blockedReason: null as string | null };
 
     for (let attempt = 0; attempt <= LIST_RETRY_DELAYS_MS.length; attempt += 1) {
       await page.waitForFunction((selectors: { row: string; empty: string }) => {
@@ -163,6 +173,9 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
       }, { timeout: LIST_READY_TIMEOUT_MS }, { row: LIST_ROW_SELECTOR, empty: LIST_EMPTY_SELECTOR }).catch(() => null);
 
       lastState = await readListState(page);
+      if (lastState.blockedReason) {
+        throw new Error(`NAVER_LIST_SOFT_200:${lastState.blockedReason}`);
+      }
       if (lastState.rowCount > 0 || lastState.noDataVisible) return lastState;
 
       if (attempt < LIST_RETRY_DELAYS_MS.length) {

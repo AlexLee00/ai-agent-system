@@ -6,6 +6,17 @@ export type CreateKioskPanelServiceDeps = {
   log: Logger;
 };
 
+type KioskPanelSaveState = {
+  popupVisible: boolean;
+  startSet: boolean;
+  endSet: boolean;
+  statusSet: boolean;
+};
+
+export function canSaveKioskPanel({ popupVisible, startSet, endSet, statusSet }: KioskPanelSaveState) {
+  return popupVisible === true && startSet === true && endSet === true && statusSet === true;
+}
+
 export function createKioskPanelService(deps: CreateKioskPanelServiceDeps) {
   const { delay, log } = deps;
 
@@ -362,8 +373,8 @@ export function createKioskPanelService(deps: CreateKioskPanelServiceDeps) {
     const statusSet = await selectUnavailableStatus(page);
     log(`  예약불가 설정: ${statusSet}`);
     await delay(500);
-    if (!statusSet) {
-      log('  ⚠️ 예약불가 상태 설정 실패');
+    if (!canSaveKioskPanel({ popupVisible, startSet, endSet, statusSet })) {
+      log('  ⚠️ 예약불가 패널 필수값 검증 실패 — 저장 차단');
       return false;
     }
 
@@ -420,8 +431,8 @@ export function createKioskPanelService(deps: CreateKioskPanelServiceDeps) {
     const statusSet = await selectAvailableStatus(page);
     log(`  예약가능 설정: ${statusSet}`);
     await delay(500);
-    if (!statusSet) {
-      log('  ⚠️ 예약가능 상태 설정 실패');
+    if (!canSaveKioskPanel({ popupVisible, startSet, endSet, statusSet })) {
+      log('  ⚠️ 예약가능 패널 필수값 검증 실패 — 저장 차단');
       return false;
     }
 

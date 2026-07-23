@@ -13,6 +13,16 @@ export const DEFAULT_DEPLOY_DRIFT_TARGETS = [
   { label: 'ai.luna.meeting-room-web', repoPath: 'bots/investment/launchd/ai.luna.meeting-room-web.plist' },
   { label: 'ai.claude.archer', repoPath: 'bots/claude/launchd/ai.claude.archer.plist' },
   { label: 'ai.claude.guardian', repoPath: 'bots/claude/launchd/ai.claude.guardian.plist' },
+  {
+    label: 'ai.ska.naver-monitor',
+    repoPath: 'bots/reservation/launchd/ai.ska.naver-monitor.plist',
+    envAllowlist: [
+      'PICKKO_CANCEL_ENABLE',
+      'PICKKO_CANCEL_MUTATION_ENABLE',
+      'SKA_ENABLE_PICKKO_CANCEL_MUTATION',
+      'SKA_CANCEL_RETRY_ENABLED',
+    ],
+  },
 ];
 
 function stable(value: unknown): unknown {

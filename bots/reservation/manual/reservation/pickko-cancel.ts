@@ -4,9 +4,16 @@ const puppeteer = require('puppeteer');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { parseArgs } = require('../../lib/args');
-const { formatPhone, toKoreanTime, pickkoEndTime } = require('../../lib/formatting');
+const { formatPhone, maskPhone, toKoreanTime, pickkoEndTime } = require('../../lib/formatting');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
+const { verifyPickkoCancellation } = require('../../lib/pickko-cancel-verification');
+const { waitForPickkoRefundPage } = require('../../lib/pickko-refund-popup');
+const { createPickkoOperationLockOwner } = require('../../lib/pickko-operation-lock');
+const {
+  acquirePickkoLock,
+  releasePickkoLock,
+} = require('../../lib/state-bus');
 const { publishReservationAlert } = require('../../lib/alert-client');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
@@ -18,18 +25,20 @@ const MODE = IS_OPS ? 'ops' : 'dev';
 const ARGS = parseArgs(process.argv);
 const PHONE_RAW = (ARGS.phone || '').replace(/\D/g, '');
 const PHONE_FORMATTED = formatPhone(PHONE_RAW);
+const PHONE_MASKED = maskPhone(PHONE_RAW);
 const DATE = ARGS.date || '';
 const START = ARGS.start || '';
 const END = ARGS.end || '';
 const ROOM = ARGS.room || '';
 const NAME = (ARGS.name || '고객').slice(0, 20);
+const PICKKO_CANCEL_LOCK_TTL_MS = 10 * 60 * 1000;
 
 if (!PHONE_RAW || !DATE || !START || !END || !ROOM) {
   log('❌ 필수 인자 누락: --phone, --date, --start, --end, --room 모두 필요');
   process.exit(1);
 }
 
-log(`📋 취소 대상: ${PHONE_RAW} / ${DATE} / ${START}~${END} / ${ROOM}룸`);
+log(`📋 취소 대상: ${PHONE_MASKED} / ${DATE} / ${START}~${END} / ${ROOM}룸`);
 
 const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350586')
   .split(',')
@@ -37,13 +46,46 @@ const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350
   .filter((p: string) => /^\d{10,11}$/.test(p));
 
 if (IS_DEV && !DEV_WHITELIST.includes(PHONE_RAW)) {
-  log(`🛑 DEV 모드: 화이트리스트 아님 (${PHONE_RAW}) → 취소 실행 안 함`);
+  log(`🛑 DEV 모드: 화이트리스트 아님 (${PHONE_MASKED}) → 취소 실행 안 함`);
   process.exit(0);
 }
 
 async function run() {
   let browser: any;
+  const lockOwner = createPickkoOperationLockOwner('cancel');
+  let lockAcquired = false;
+  let cleanupPromise: Promise<void> | null = null;
+  const cleanup = () => {
+    if (cleanupPromise) return cleanupPromise;
+    cleanupPromise = (async () => {
+      try { if (browser) await browser.close(); } catch (_error) {}
+      browser = null;
+      if (lockAcquired) {
+        try {
+          await releasePickkoLock(lockOwner);
+          log('🔓 픽코 취소 전용 락 해제');
+        } catch (_error) {}
+        lockAcquired = false;
+      }
+    })();
+    return cleanupPromise;
+  };
+  let signalShutdownStarted = false;
+  const shutdownFromSignal = (exitCode: number) => {
+    if (signalShutdownStarted) return;
+    signalShutdownStarted = true;
+    void cleanup().finally(() => process.exit(exitCode));
+  };
+  const onSigterm = () => shutdownFromSignal(143);
+  const onSigint = () => shutdownFromSignal(130);
+  process.once('SIGTERM', onSigterm);
+  process.once('SIGINT', onSigint);
   try {
+    lockAcquired = await acquirePickkoLock(lockOwner, PICKKO_CANCEL_LOCK_TTL_MS);
+    if (!lockAcquired) {
+      throw new Error('PICKKO_FAILURE_STAGE=LOCK_CONFLICT pickko operation lock unavailable');
+    }
+    log('🔒 픽코 취소 전용 락 획득');
     browser = await puppeteer.launch(getPickkoLaunchOptions());
 
     const pages = await browser.pages();
@@ -147,10 +189,19 @@ async function run() {
         return trs.map((tr) => (((tr as HTMLElement).textContent || '').replace(/\s+/g, ' ').trim().slice(0, 150))).join('\n');
       });
       log(`⚠️ 해당 예약을 목록에서 찾지 못함. 결과 목록:\n${resultsText}`);
-      throw new Error(`[4단계] 취소 대상 예약 미발견: ${PHONE_RAW} ${DATE} ${START}~${END} ${ROOM}`);
+      throw new Error(`[4단계] 취소 대상 예약 미발견: ${PHONE_MASKED} ${DATE} ${START}~${END} ${ROOM}`);
     }
 
     log(`🔗 상세보기 이동: ${viewHref}`);
+
+    const requireCancellationEvidence = async (flow: string) => {
+      const evidence = await verifyPickkoCancellation(page, viewHref, { delay });
+      log(`📊 [${flow}] 취소 사후검증: ${evidence.confirmed ? evidence.status : '상태 불명확'}`);
+      if (!evidence.confirmed) {
+        throw new Error(`PICKKO_FAILURE_STAGE=CANCEL_UNVERIFIED ${flow}`);
+      }
+      return evidence;
+    };
 
     log('\n[5단계] 상세보기');
     await page.goto(viewHref, { waitUntil: 'networkidle2', timeout: 20000 });
@@ -201,7 +252,7 @@ async function run() {
     if (!orderDetailClicked.clicked) {
       if (orderDetailClicked.alreadyCancelled) {
         log('ℹ️ 이미 환불/취소 완료된 예약입니다. 중복 처리 방지로 종료.');
-        process.exit(0);
+        return;
       }
 
       log('\n[6-B단계] 주문상세 없음 → 수정 버튼 폴백 시도 (0원/이용중 예약)');
@@ -257,13 +308,9 @@ async function run() {
       await delay(500);
       log(`✅ [6-B단계] 수정→취소→저장 완료: ${page.url()}`);
 
-      const finalStatusB = await page.evaluate(() =>
-        (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300),
-      ).catch(() => '');
-      const isCancelledB = finalStatusB.includes('취소') || finalStatusB.includes('환불') || finalStatusB.includes('삭제');
-      log(`📊 최종 상태: ${isCancelledB ? '취소 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
+      await requireCancellationEvidence('수정→취소→저장');
       log('✅ [SUCCESS] 픽코 예약 취소 완료 (수정→취소→저장 플로우)');
-      process.exit(0);
+      return;
     }
     await delay(1500);
 
@@ -319,35 +366,26 @@ async function run() {
       await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
       await delay(500);
 
-      const finalStatusB = await page.evaluate(() =>
-        (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300),
-      ).catch(() => '');
-      const isCancelledB = finalStatusB.includes('취소') || finalStatusB.includes('환불') || finalStatusB.includes('삭제');
-      log(`📊 최종 상태: ${isCancelledB ? '취소 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
+      await requireCancellationEvidence('결제대기→수정→취소');
       log('✅ [SUCCESS] 픽코 예약 취소 완료 (결제대기→수정→취소 플로우)');
-      process.exit(0);
+      return;
     }
 
+    const existingRefundPages = await browser.pages();
     await page.click('a.pay_view');
     log('상세보기 클릭: {"clicked":true,"selector":"a.pay_view"}');
     const refundSel = 'a.pay_refund_app, a.pay_refund';
     await delay(3000);
 
     log('\n[8단계] 환불 버튼 클릭');
-    const allPages8 = await browser.pages();
-    log(`  열린 페이지 수: ${allPages8.length}`);
-
-    let refundPage8: any = null;
-    for (const p of allPages8) {
-      try {
-        await p.waitForSelector(refundSel, { timeout: 3000 }).catch(() => null);
-        const found = await p.evaluate(() => !!document.querySelector('a.pay_refund_app, a.pay_refund'));
-        if (found) {
-          refundPage8 = p;
-          break;
-        }
-      } catch (_e) {}
-    }
+    const refundPage8 = await waitForPickkoRefundPage({
+      browser,
+      openerPage: page,
+      existingPages: existingRefundPages,
+      selector: refundSel,
+      timeoutMs: 5_000,
+      delay,
+    });
 
     let refundClicked: any = { clicked: false };
     if (refundPage8) {
@@ -404,13 +442,9 @@ async function run() {
       await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
       await delay(500);
 
-      const finalStatus8b = await page.evaluate(() =>
-        (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 300),
-      ).catch(() => '');
-      const isCancelled8b = finalStatus8b.includes('취소') || finalStatus8b.includes('환불') || finalStatus8b.includes('삭제');
-      log(`📊 최종 상태: ${isCancelled8b ? '취소 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
+      await requireCancellationEvidence('환불버튼없음→수정→취소');
       log('✅ [SUCCESS] 픽코 예약 취소 완료 (결제상세→환불버튼없음→수정→취소 플로우)');
-      process.exit(0);
+      return;
     }
     await delay(1000);
 
@@ -423,24 +457,14 @@ async function run() {
     const finalUrl = page.url();
     log(`🌐 최종 URL: ${finalUrl}`);
 
-    const finalStatusText = await page.evaluate(() => {
-      const clean = (s: any) => (s ?? '').replace(/\s+/g, ' ').trim();
-      return clean(document.body?.innerText || '').slice(0, 500);
-    }).catch(() => '');
-    const isCancelled = finalStatusText.includes('취소') || finalStatusText.includes('환불');
-    log(`📊 최종 상태: ${isCancelled ? '취소/환불 확인됨' : '상태 불명확 (수동 확인 권장)'}`);
-
-    log('✅ [SUCCESS] 픽코 예약 취소 완료!');
-    log(`   📞 번호: ${PHONE_RAW}`);
-    log(`   📅 날짜: ${DATE}`);
-    log(`   ⏰ 시간: ${START}~${END}`);
-    log(`   🏛️ 룸: ${ROOM}`);
+    const cancellationEvidence = await verifyPickkoCancellation(page, viewHref, { delay });
+    log(`📊 최종 상태: ${cancellationEvidence.confirmed ? cancellationEvidence.status : '상태 불명확 (수동 확인 필요)'}`);
 
     if (refundClicked.cls && refundClicked.cls.includes('pay_refund_app') && MODE === 'ops') {
       const msg = [
         `⚠️ [수동처리 필요] 픽코 앱/키오스크 PG 환불 완료`,
         ``,
-        `📞 ${PHONE_RAW} (${NAME})`,
+        `📞 ${PHONE_MASKED} (${NAME})`,
         `📅 ${DATE} ${START}~${END} / ${ROOM}룸`,
         ``,
         `💳 PG 환불(IAMPORT)은 성공했으나`,
@@ -460,13 +484,21 @@ async function run() {
       log(sent ? '📨 수동처리 알림 발송 완료' : '⚠️ 수동처리 알림 발송 실패');
     }
 
-    process.exit(0);
+    if (!cancellationEvidence.confirmed) {
+      throw new Error('PICKKO_FAILURE_STAGE=CANCEL_UNVERIFIED refund result not reflected in reservation status');
+    }
+
+    log('✅ [SUCCESS] 픽코 예약 취소 완료!');
+    log(`   📞 번호: ${PHONE_MASKED}`);
+    log(`   📅 날짜: ${DATE}`);
+    log(`   ⏰ 시간: ${START}~${END}`);
+    log(`   🏛️ 룸: ${ROOM}`);
   } catch (err: any) {
     log(`❌ 취소 처리 오류: ${err.message}`);
 
     if (MODE === 'ops') {
       log(`\n🚨 [OPS-ERROR] 픽코 취소 실패`);
-      log(`   📞 번호: ${PHONE_RAW} / 📅 날짜: ${DATE} / ⏰ ${START}~${END} / 🏛️ ${ROOM}`);
+      log(`   📞 번호: ${PHONE_MASKED} / 📅 날짜: ${DATE} / ⏰ ${START}~${END} / 🏛️ ${ROOM}`);
       log(`   ❌ 오류: ${err.message}`);
       log(`   ⚠️ 조치: 픽코 수동 취소 필요`);
     }
@@ -476,9 +508,11 @@ async function run() {
       await delay(30000);
     }
 
-    process.exit(1);
+    process.exitCode = 1;
   } finally {
-    try { if (browser) await browser.close(); } catch (_e) {}
+    await cleanup();
+    process.removeListener('SIGTERM', onSigterm);
+    process.removeListener('SIGINT', onSigint);
   }
 }
 

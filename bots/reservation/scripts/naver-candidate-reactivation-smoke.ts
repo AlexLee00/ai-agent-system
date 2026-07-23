@@ -168,6 +168,11 @@ async function main() {
 
   assert.equal(completedHarness.updated.length, 0, 'completed seen row must stay skipped');
   assert.equal(completedHarness.pickkoRuns.length, 0, 'completed seen row must not rerun Pickko');
+  assert.equal(
+    completedHarness.logs.some((line) => line.includes('파싱 실패')),
+    false,
+    'a normal no-candidate cycle must not be logged as a parsing failure',
+  );
 
   const elapsed = booking({ bookingId: 'already-time-elapsed' });
   const elapsedHarness = createHarness({

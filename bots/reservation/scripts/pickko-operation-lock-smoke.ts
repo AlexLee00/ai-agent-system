@@ -147,6 +147,23 @@ function testManualPriorityClearRequiresMatchingOwner() {
   assert.match(payScanSource, /clearManualPickkoPriority\('pickko_pay_scan'\)/);
 }
 
+function testManualAndCancelFlowsReleaseSharedLock() {
+  const manualSource = fs.readFileSync(path.resolve(__dirname, '../manual/reservation/pickko-accurate.ts'), 'utf8');
+  const lockFailureStart = manualSource.indexOf('if (!lockAcquired)');
+  const lockFailureEnd = manualSource.indexOf("log(`🔒 픽코 락 획득", lockFailureStart);
+  assert.ok(lockFailureStart >= 0 && lockFailureEnd > lockFailureStart);
+  const lockFailureBranch = manualSource.slice(lockFailureStart, lockFailureEnd);
+  assert.match(lockFailureBranch, /throw buildStageError\('LOCK_CONFLICT'/);
+  assert.doesNotMatch(lockFailureBranch, /process\.exit\(/, 'lock conflict must flow through releaseLock cleanup');
+
+  const cancelSource = fs.readFileSync(path.resolve(__dirname, '../manual/reservation/pickko-cancel.ts'), 'utf8');
+  assert.match(cancelSource, /createPickkoOperationLockOwner\('cancel'\)/);
+  assert.match(cancelSource, /acquirePickkoLock\(lockOwner/);
+  assert.match(cancelSource, /releasePickkoLock\(lockOwner\)/);
+  assert.match(cancelSource, /process\.once\('SIGTERM', onSigterm\)/);
+  assert.match(cancelSource, /shutdownFromSignal\(143\)/);
+}
+
 async function testKioskUsesLongLivedLock() {
   let acquireArgs = null;
   const service = createKioskRuntimeService({
@@ -451,6 +468,7 @@ Promise.resolve()
   .then(testNaverMutationsCheckLeaseGuard)
   .then(testCompletedNaverMutationsPersistBeforePostLeaseGuard)
   .then(testManualPriorityClearRequiresMatchingOwner)
+  .then(testManualAndCancelFlowsReleaseSharedLock)
   .then(testRequiredRenewal)
   .then(testChildTimeoutKillsProcess)
   .then(testForceKillWaitsForChildClose)

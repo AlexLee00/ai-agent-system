@@ -1,19 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * scripts/manual-batch-reserve.js — 대리예약 배치 스크립트
- *
- * 1단계: pickko-register.ts shim → 픽코 예약 등록 + reservation 원장 반영
- *   - 슬롯 사용 중이면 A1→A2→B 순으로 자동 폴백
- * 2단계: pickko-register 내부에서 네이버 예약불가까지 동기 처리
- *
- * 실행: tsx bots/reservation/scripts/manual-batch-reserve.ts
+ * Reviewed JSON batch input -> Pickko registration -> Naver slot blocking.
+ * Room fallback is allowed only when Pickko registration did not complete.
  */
 
 const { spawn } = require('child_process');
-const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
+const fs = require('node:fs');
 const path = require('path');
-const { releasePickkoLock } = require('../lib/state-bus');
+const { classifyBatchRegisterExitCode } = require('../lib/pickko-register-contract');
+
+const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
 
 type Booking = {
   name: string;
@@ -24,27 +21,13 @@ type Booking = {
   room: 'A1' | 'A2' | 'B';
 };
 
-// ── 예약 목록 (수정 후 실행) ─────────────────────────────────────────
-const BOOKINGS: Booking[] = [
-  { name: '민경수', phone: '01027922221', date: '2026-03-11', start: '10:30', end: '12:30', room: 'A1' },
-  { name: '민경수', phone: '01027922221', date: '2026-03-11', start: '12:30', end: '14:30', room: 'A2' },
-  { name: '민경수', phone: '01027922221', date: '2026-03-13', start: '12:00', end: '14:00', room: 'A1' },
-  { name: '민경수', phone: '01027922221', date: '2026-03-13', start: '14:00', end: '15:00', room: 'A1' },
-  { name: '민경수', phone: '01027922221', date: '2026-03-13', start: '19:00', end: '21:00', room: 'A1' },
-  { name: '민경수', phone: '01027922221', date: '2026-03-14', start: '10:00', end: '12:00', room: 'A1' },
-];
-
-// 폴백 순서
 const ROOM_FALLBACK: Record<Booking['room'], Booking['room'][]> = {
   A1: ['A1', 'A2', 'B'],
   A2: ['A2', 'B'],
   B: ['B'],
 };
 
-const PICKKO_SCRIPT  = path.join(__dirname, '../manual/reservation/pickko-accurate.js');
 const PICKKO_REGISTER = path.join(__dirname, '../manual/reservation/pickko-register.ts');
-
-// ── 유틸 ─────────────────────────────────────────────────────────────
 
 function runNode(scriptPath: string, args: string[]): Promise<number | null> {
   return new Promise((resolve, reject) => {
@@ -58,74 +41,95 @@ function runNode(scriptPath: string, args: string[]): Promise<number | null> {
   });
 }
 
-// ── 메인 ─────────────────────────────────────────────────────────────
+function loadBookings(argv = process.argv): Booking[] {
+  const inputArg = argv.find((arg) => arg.startsWith('--input='));
+  if (!inputArg) return [];
+  const inputPath = path.resolve(inputArg.slice('--input='.length));
+  const parsed = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
+  if (!Array.isArray(parsed)) throw new Error('batch input must be a JSON array');
+  return parsed.map((booking, index) => {
+    const missing = ['name', 'phone', 'date', 'start', 'end', 'room'].filter((key) => !booking?.[key]);
+    if (missing.length > 0 || !['A1', 'A2', 'B'].includes(booking.room)) {
+      throw new Error(`invalid booking at index ${index}: ${missing.join(',') || 'room'}`);
+    }
+    return booking as Booking;
+  });
+}
 
 async function main() {
+  const bookings = loadBookings();
+  if (bookings.length === 0) {
+    throw new Error('no bookings: pass a reviewed JSON file with --input=/absolute/path/bookings.json');
+  }
+
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`대리예약 배치: ${BOOKINGS.length}건`);
+  console.log(`대리예약 배치: ${bookings.length}건`);
   console.log(`${'═'.repeat(60)}`);
 
-  let bookingOk = 0, bookingFail = 0;
+  let bookingOk = 0;
+  let bookingFail = 0;
+  let bookingFollowup = 0;
 
-  for (const b of BOOKINGS) {
-    const baseLabel = `${b.date} ${b.start}~${b.end} (${b.name})`;
+  for (const booking of bookings) {
+    const baseLabel = `${booking.date} ${booking.start}~${booking.end} (${booking.name})`;
     console.log(`\n${'─'.repeat(60)}`);
     console.log(`📋 처리 중: ${baseLabel}`);
     console.log(`${'─'.repeat(60)}`);
 
-    // ── Step 1: 예약 등록 (A1→A2→B 폴백) ────────────────────────────
-    const fallbacks = ROOM_FALLBACK[b.room] || [b.room];
+    const fallbacks = ROOM_FALLBACK[booking.room] || [booking.room];
     let bookedRoom = null;
 
     for (const room of fallbacks) {
       console.log(`\n[1/1] 예약 등록 — ${room}룸 시도`);
-
-      // 이전 실행에서 락이 남아있을 수 있으므로 보장
-      try { await releasePickkoLock('manual'); } catch {}
-
       const code = await runNode(PICKKO_REGISTER, [
-        `--phone=${b.phone}`,
-        `--date=${b.date}`,
-        `--start=${b.start}`,
-        `--end=${b.end}`,
+        `--phone=${booking.phone}`,
+        `--date=${booking.date}`,
+        `--start=${booking.start}`,
+        `--end=${booking.end}`,
         `--room=${room}`,
-        `--name=${b.name}`,
+        `--name=${booking.name}`,
         '--skip-name-sync',
       ]).catch(() => 1);
 
-      // 락 잔류 방지
-      try { await releasePickkoLock('manual'); } catch {}
-
-      if (code === 0) {
+      const outcome = classifyBatchRegisterExitCode(code);
+      if (outcome === 'complete') {
         bookedRoom = room;
+        bookingOk += 1;
         console.log(`✅ 예약 등록 + 네이버 차단 성공 (exit ${code}) — ${room}룸`);
-        bookingOk++;
         break;
       }
-
-      console.log(`⚠️  ${room}룸 실패 (exit ${code}) → 다음 룸 시도`);
+      if (outcome === 'registered_followup') {
+        bookedRoom = room;
+        bookingFollowup += 1;
+        console.log(`⚠️ 픽코 등록 완료·네이버 차단 후속 필요 (exit ${code}) — 다음 룸 재시도 금지`);
+        break;
+      }
+      if (outcome === 'terminal_failure') {
+        console.log(`⚠️ ${room}룸 등록 불가 (exit ${code}) — 룸 폴백으로 해소할 수 없어 재시도 중단`);
+        break;
+      }
+      console.log(`⚠️ ${room}룸 미등록 (exit ${code}) → 다음 룸 시도`);
     }
 
     if (!bookedRoom) {
-      console.error(`❌ 예약 등록 실패 — 모든 룸 시도 실패: ${baseLabel}`);
-      bookingFail++;
-      continue;
+      console.error(`❌ 예약 등록 실패: ${baseLabel}`);
+      bookingFail += 1;
     }
   }
 
-  // ── 결과 요약 ────────────────────────────────────────────────────
   console.log(`\n${'═'.repeat(60)}`);
-  console.log(`배치 완료 결과`);
+  console.log('배치 완료 결과');
   console.log(`${'═'.repeat(60)}`);
   console.log(`예약 등록 + 네이버 차단: ✅ ${bookingOk}건 / ❌ ${bookingFail}건`);
+  console.log(`픽코 등록 완료·네이버 후속 필요: ⚠️ ${bookingFollowup}건`);
   console.log(`${'═'.repeat(60)}\n`);
 
-  if (bookingFail > 0) process.exit(1);
+  if (bookingFail > 0 || bookingFollowup > 0) process.exit(1);
 }
 
 module.exports = {
-  BOOKINGS,
   ROOM_FALLBACK,
+  loadBookings,
   runNode,
   main,
 };

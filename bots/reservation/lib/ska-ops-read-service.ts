@@ -3,7 +3,12 @@
 
 const kst = require('../../../packages/core/lib/kst');
 const crypto = require('node:crypto');
+const os = require('node:os');
+const path = require('node:path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const {
+  buildDeployDriftGuardReport,
+} = require('../../_shared/hooks/deploy-drift-guard');
 const {
   assessPickkoLiveSnapshot,
   loadPickkoLiveSnapshot,
@@ -36,9 +41,17 @@ function slotKey({ date, use_date, start_time, use_start_time, room, room_type, 
   ].join('|');
 }
 
+function opaqueRef(value) {
+  return crypto
+    .createHash('sha256')
+    .update(String(value || ''))
+    .digest('hex')
+    .slice(0, 12);
+}
+
 function compactReservation(row) {
   return {
-    id: row.id,
+    reservationRef: opaqueRef(row.id),
     date: row.date,
     start: row.start_time,
     end: row.end_time,
@@ -51,11 +64,7 @@ function compactReservation(row) {
 
 function compactPickko(row) {
   return {
-    entryRef: crypto
-      .createHash('sha256')
-      .update(String(row.entry_key || ''))
-      .digest('hex')
-      .slice(0, 12),
+    entryRef: opaqueRef(row.entry_key),
     date: String(row.use_date || '').slice(0, 10),
     start: row.use_start_time,
     end: row.use_end_time,
@@ -249,6 +258,7 @@ async function buildReservationSyncCheck(args = {}, deps = {}) {
   return {
     ok: true,
     skipped: false,
+    status: pendingSnapshotRefreshRows.length > 0 ? 'partial' : 'complete',
     checkedAt: kst.datetimeStr(),
     mode: 'read_only_advisory',
     from,
@@ -277,6 +287,132 @@ async function buildReservationSyncCheck(args = {}, deps = {}) {
     cancelledButPickkoEvidence,
     pickkoOnly,
     pendingSnapshotRefresh,
+  };
+}
+
+async function buildSkaRuntimeContractStatus(args = {}, deps = {}) {
+  const queryReadonly = deps.queryReadonly || pgPool.queryReadonly;
+  const readPickkoSnapshot = deps.readPickkoSnapshot || loadPickkoLiveSnapshot;
+  const nowMs = Number.isFinite(deps.nowMs) ? deps.nowMs : Date.now();
+  const repoRoot = path.resolve(__dirname, '../../..');
+  const envAllowlist = [
+    'PICKKO_CANCEL_ENABLE',
+    'PICKKO_CANCEL_MUTATION_ENABLE',
+    'SKA_ENABLE_PICKKO_CANCEL_MUTATION',
+    'SKA_CANCEL_RETRY_ENABLED',
+  ];
+
+  let monitorDrift;
+  try {
+    monitorDrift = deps.buildMonitorDrift
+      ? await deps.buildMonitorDrift()
+      : buildDeployDriftGuardReport({
+        label: 'ai.ska.naver-monitor',
+        expectedPath: path.join(repoRoot, 'bots/reservation/launchd/ai.ska.naver-monitor.plist'),
+        loadedPath: path.join(os.homedir(), 'Library/LaunchAgents/ai.ska.naver-monitor.plist'),
+        envAllowlist,
+        includeLiveState: true,
+      });
+  } catch (error) {
+    monitorDrift = {
+      ok: true,
+      skipped: true,
+      reason: 'monitor_drift_check_unavailable',
+      error: String(error?.message || error).slice(0, 240),
+    };
+  }
+
+  let historicalRaw = {
+    ok: true,
+    skipped: false,
+    role: 'historical_forecast_feature_input',
+    scheduledCollector: false,
+    latestUpdatedAt: null,
+    latestSourceDate: null,
+    rowCount: 0,
+  };
+  try {
+    const rows = await queryReadonly('reservation', `
+      SELECT
+        MAX(updated_at)::text AS latest_updated_at,
+        MAX(source_date)::text AS latest_source_date,
+        COUNT(*)::int AS row_count
+      FROM pickko_order_raw
+    `);
+    historicalRaw = {
+      ...historicalRaw,
+      latestUpdatedAt: rows[0]?.latest_updated_at || null,
+      latestSourceDate: rows[0]?.latest_source_date || null,
+      rowCount: Number(rows[0]?.row_count || 0),
+    };
+  } catch (error) {
+    historicalRaw = {
+      ...historicalRaw,
+      ok: false,
+      skipped: true,
+      reason: tableMissing(error) ? 'pickko_order_raw_missing' : 'pickko_order_raw_query_failed',
+    };
+  }
+
+  let dataHygiene = {
+    ok: true,
+    skipped: false,
+    nullDates: 0,
+    blankDates: 0,
+    malformedDates: 0,
+  };
+  try {
+    const rows = await queryReadonly('reservation', `
+      SELECT
+        COUNT(*) FILTER (WHERE date IS NULL)::int AS null_dates,
+        COUNT(*) FILTER (WHERE date IS NOT NULL AND BTRIM(date::text) = '')::int AS blank_dates,
+        COUNT(*) FILTER (
+          WHERE NULLIF(BTRIM(date::text), '') IS NOT NULL
+            AND BTRIM(date::text) !~ '^\\d{4}-\\d{2}-\\d{2}$'
+        )::int AS malformed_dates
+      FROM reservations
+    `);
+    dataHygiene = {
+      ...dataHygiene,
+      nullDates: Number(rows[0]?.null_dates || 0),
+      blankDates: Number(rows[0]?.blank_dates || 0),
+      malformedDates: Number(rows[0]?.malformed_dates || 0),
+    };
+  } catch (_error) {
+    dataHygiene = {
+      ...dataHygiene,
+      ok: false,
+      skipped: true,
+      reason: 'reservation_date_hygiene_query_failed',
+    };
+  }
+
+  const snapshot = readPickkoSnapshot();
+  const coverageFrom = String(args.from || kst.today()).slice(0, 10);
+  const coverageTo = String(args.to || addDays(coverageFrom, 1)).slice(0, 10);
+  const assessment = assessPickkoLiveSnapshot(snapshot, {
+    from: coverageFrom,
+    to: coverageTo,
+    nowMs,
+    maxAgeMs: deps.maxSnapshotAgeMs,
+  });
+
+  return {
+    ok: true,
+    checkedAt: kst.datetimeStr(),
+    mode: 'read_only_advisory',
+    liveMutation: false,
+    monitorDrift,
+    liveSnapshot: {
+      usable: assessment.usable,
+      reason: assessment.reason,
+      ageMs: assessment.ageMs ?? null,
+      collectedAt: snapshot?.collectedAt || null,
+      coverage: snapshot?.coverage || null,
+      entryCount: Number(snapshot?.entryCount || snapshot?.entries?.length || 0),
+    },
+    historicalRaw,
+    dataHygiene,
   };
 }
 
@@ -312,6 +448,7 @@ module.exports = {
   addDays,
   buildCancelPipelineStatus,
   buildReservationSyncCheck,
+  buildSkaRuntimeContractStatus,
   buildSkaCancelOpsAdvisory,
   compactReservation,
   compactPickko,

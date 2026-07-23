@@ -27,7 +27,7 @@ function fakeRow({ malformed = false } = {}) {
   };
 }
 
-function createFakePage({ dateFilter = 'USEDATE', delayedRows = false, emptyState = false, reloadNeverReady = false, malformedRows = false } = {}) {
+function createFakePage({ dateFilter = 'USEDATE', delayedRows = false, emptyState = false, reloadNeverReady = false, malformedRows = false, loginState = false } = {}) {
   let ready = !delayedRows;
   return {
     goto: async () => { ready = !delayedRows; },
@@ -37,10 +37,14 @@ function createFakePage({ dateFilter = 'USEDATE', delayedRows = false, emptyStat
       const previousDocument = global.document;
       const previousLocation = global.location;
       global.location = {
-        href: `https://partner.booking.naver.com/bizes/596871/booking-list-view?countFilter=CONFIRMED&bookingStatusCodes=RC03&dateDropdownType=TODAY&startDateTime=2026-07-04&endDateTime=2026-07-04&dateFilter=${dateFilter}`,
+        href: loginState
+          ? 'https://nid.naver.com/nidlogin.login'
+          : `https://partner.booking.naver.com/bizes/596871/booking-list-view?countFilter=CONFIRMED&bookingStatusCodes=RC03&dateDropdownType=TODAY&startDateTime=2026-07-04&endDateTime=2026-07-04&dateFilter=${dateFilter}`,
       };
       global.document = {
+        body: { innerText: loginState ? 'NAVER 로그인' : '' },
         querySelector(selector) {
+          if (selector.includes('password')) return loginState ? { offsetParent: {} } : null;
           if (selector.includes('nodata')) return emptyState ? { offsetParent: {} } : null;
           return null;
         },
@@ -105,6 +109,16 @@ async function main() {
     { startDate: '2026-07-04', endDate: '2026-07-04', limit: 10 },
   );
   assert.deepStrictEqual(emptyRows, [], 'an explicit empty state is a valid zero-row result');
+
+  await assert.rejects(
+    service.scrapeConfirmedStatusList(
+      createFakePage({ emptyState: true, loginState: true }),
+      'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+      { startDate: '2026-07-04', endDate: '2026-07-04', limit: 10 },
+    ),
+    /NAVER_LIST_SOFT_200:login_required/,
+    'a soft-200 login page must not be accepted as an authenticated empty list',
+  );
 
   await assert.rejects(
     service.scrapeConfirmedStatusList(

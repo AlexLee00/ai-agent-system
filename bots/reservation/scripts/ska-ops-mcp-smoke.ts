@@ -14,7 +14,7 @@ const {
 function createQueryReadonlyMock() {
   const calls = [];
   const reservations = [
-    { id: 1, date: '2026-07-03', start_time: '10:00', end_time: '11:00', room: 'A1', status: 'completed', pickko_status: null, updated_at: '2026-07-03T02:00:00.000Z' },
+    { id: '01012345678-2026-07-03-10:00', date: '2026-07-03', start_time: '10:00', end_time: '11:00', room: 'A1', status: 'completed', pickko_status: null, updated_at: '2026-07-03T02:00:00.000Z' },
     { id: 2, date: '2026-07-03', start_time: '11:00', end_time: '12:00', room: 'A2', status: 'completed', pickko_status: 'paid', updated_at: '2026-07-03T02:00:00.000Z' },
     { id: 3, date: '2026-07-03', start_time: '12:00', end_time: '13:00', room: 'B', status: 'cancelled', pickko_status: null, updated_at: '2026-07-03T02:00:00.000Z' },
   ];
@@ -40,6 +40,9 @@ function createQueryReadonlyMock() {
         return [{ reason: 'timeout', status: 'pending', count: 2 }];
       }
       if (/FROM reservations/i.test(sql) && /COUNT\(\*\)/i.test(sql)) {
+        if (/AS blank_dates/i.test(sql)) {
+          return [{ null_dates: 0, blank_dates: 6, malformed_dates: 0 }];
+        }
         return [{ count: 1 }];
       }
       if (/FROM reservations/i.test(sql)) {
@@ -48,7 +51,10 @@ function createQueryReadonlyMock() {
         assert.match(sql, /BTRIM\(date::text\) BETWEEN \$1 AND \$2/);
         return reservations;
       }
-      assert.equal(/FROM pickko_order_raw/i.test(sql), false);
+      if (/FROM pickko_order_raw/i.test(sql)) {
+        assert.match(sql, /MAX\(updated_at\)/i);
+        return [{ latest_updated_at: '2026-06-28T00:00:00.000Z', latest_source_date: '2026-06-28', row_count: 3602 }];
+      }
       throw new Error(`unexpected query: ${sql}`);
     },
   };
@@ -107,7 +113,7 @@ async function main() {
 
   assert.deepStrictEqual(
     SKA_OPS_MCP_TOOLS.map((tool) => tool.name),
-    ['cancel-pipeline-status', 'reservation-sync-check'],
+    ['cancel-pipeline-status', 'reservation-sync-check', 'runtime-contract-status'],
   );
 
   const mock = createQueryReadonlyMock();
@@ -128,6 +134,13 @@ async function main() {
       })),
     }),
     nowMs: Date.parse('2026-07-03T04:00:00.000Z'),
+    buildMonitorDrift: async () => ({
+      ok: false,
+      driftDetected: true,
+      advisoryOnly: true,
+      liveMutation: false,
+      diffs: [{ key: 'EnvironmentVariables' }],
+    }),
   };
 
   const pipeline = await callSkaOpsTool('cancel-pipeline-status', {}, deps);
@@ -142,11 +155,25 @@ async function main() {
   assert.equal(sync.counts.cancelledButPickkoEvidence, 1);
   assert.equal(sync.counts.pickkoOnly, 1);
   assert.equal(sync.counts.invalidReservationDates, 1);
+  assert.equal(sync.status, 'complete');
   assert.equal(sync.hygiene.invalidReservationDatePolicy, 'excluded_from_sync_check');
   assert.equal(Object.prototype.hasOwnProperty.call(sync.naverCompletedMissingPickko[0], 'phone'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(sync.naverCompletedMissingPickko[0], 'id'), false);
+  assert.match(sync.naverCompletedMissingPickko[0].reservationRef, /^[0-9a-f]{12}$/);
+  assert.equal(JSON.stringify(sync).includes('01012345678'), false, 'reservation composite IDs must not leak phone digits');
   assert.equal(Object.prototype.hasOwnProperty.call(sync.pickkoOnly[0], 'entryKey'), false);
   assert.match(sync.pickkoOnly[0].entryRef, /^[0-9a-f]{12}$/);
   assert.equal(sync.cancelledButPickkoEvidence[0].pickkoEvidence[0].entryRef.includes('pk-b'), false);
+
+  const runtime = await callSkaOpsTool('runtime-contract-status', { from: '2026-07-03', to: '2026-07-03' }, deps);
+  assert.equal(runtime.mode, 'read_only_advisory');
+  assert.equal(runtime.liveMutation, false);
+  assert.equal(runtime.monitorDrift.driftDetected, true);
+  assert.equal(runtime.liveSnapshot.usable, true);
+  assert.equal(runtime.historicalRaw.rowCount, 3602);
+  assert.equal(runtime.historicalRaw.scheduledCollector, false);
+  assert.equal(runtime.dataHygiene.blankDates, 6);
+  assert.equal(runtime.dataHygiene.malformedDates, 0);
 
   const { server, port } = await startServer({ port: 0, deps });
   try {
@@ -156,9 +183,9 @@ async function main() {
 
     const list = await postJson({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     assert.equal(list.status, 200);
-    assert.equal(list.body.result.tools.length, 2);
+    assert.equal(list.body.result.tools.length, 3);
 
-    for (const name of ['cancel-pipeline-status', 'reservation-sync-check']) {
+    for (const name of ['cancel-pipeline-status', 'reservation-sync-check', 'runtime-contract-status']) {
       const response = await postJson({
         port,
         body: { jsonrpc: '2.0', id: name, method: 'tools/call', params: { name, arguments: { date: '2026-07-03' } } },
@@ -173,7 +200,7 @@ async function main() {
 
   console.log(JSON.stringify({
     ok: true,
-    tests: ['tools', 'pipeline-status', 'reservation-sync-check', 'http-json-rpc', 'read-only-sql', 'direct-launchd-supervision'],
+    tests: ['tools', 'pipeline-status', 'reservation-sync-check', 'runtime-contract-status', 'http-json-rpc', 'read-only-sql', 'direct-launchd-supervision'],
     queryCalls: mock.calls.length,
   }));
 }

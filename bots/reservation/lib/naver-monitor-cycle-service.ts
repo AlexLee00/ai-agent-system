@@ -148,6 +148,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
             `프로필: ${naverUserDataDir}\n` +
             `플래그 파일: ${headedFlagPath}`,
         });
+        throw new Error('naver_session_recovery_failed');
       }
     }
 

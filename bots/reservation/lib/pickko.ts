@@ -64,21 +64,59 @@ async function loginToPickko(page: any, id: string, pw: string, delayFn?: (ms: n
     console.error('[pickko] 로그인 페이지 로드 실패:', message);
     throw e;
   }
+  let navigation: Promise<unknown> | null = null;
+  if (typeof page.waitForNavigation === 'function') {
+    navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
+  }
   try {
-    await page.evaluate((id, pw) => {
+    const formResult = await page.evaluate((id, pw) => {
       const idInput = document.getElementById('mn_id') as HTMLInputElement | null;
       const pwInput = document.getElementById('mn_pw') as HTMLInputElement | null;
       const loginButton = document.getElementById('loginButton') as HTMLElement | null;
-      if (idInput) idInput.value = id;
-      if (pwInput) pwInput.value = pw;
-      loginButton?.click();
+      const missing = [
+        !idInput ? 'mn_id' : null,
+        !pwInput ? 'mn_pw' : null,
+        !loginButton ? 'loginButton' : null,
+      ].filter(Boolean);
+      if (missing.length > 0) return { submitted: false, missing };
+      idInput.value = id;
+      pwInput.value = pw;
+      for (const input of [idInput, pwInput]) {
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      loginButton.click();
+      return { submitted: true, missing: [] };
     }, id, pw);
+    if (!formResult?.submitted) {
+      throw new Error(`PICKKO_LOGIN_FORM_INVALID:${(formResult?.missing || []).join(',') || 'unknown'}`);
+    }
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     console.error('[pickko] 로그인 폼 입력 실패:', message);
     throw e;
   }
-  await d(3000);
+  await Promise.race([navigation || Promise.resolve(null), d(3000)]);
+  if (typeof page.waitForFunction === 'function') {
+    await page.waitForFunction(() => {
+      const loginFormPresent = !!document.getElementById('mn_id')
+        || !!document.getElementById('mn_pw')
+        || !!document.getElementById('loginButton');
+      return !loginFormPresent;
+    }, { timeout: 10000 }).catch(() => null);
+  }
+  const postState = await page.evaluate(() => ({
+    loginFormPresent: !!document.getElementById('mn_id')
+      || !!document.getElementById('mn_pw')
+      || !!document.getElementById('loginButton'),
+    authenticatedMarker: Array.from(document.querySelectorAll('a, button'))
+      .some((element) => /로그아웃|관리자 로그아웃/.test(String(element.textContent || ''))),
+  }));
+  const currentUrl = typeof page.url === 'function' ? String(page.url() || '') : '';
+  const onLoginUrl = /\/manager\/login(?:\.html)?(?:[?#]|$)/i.test(currentUrl);
+  if (postState?.loginFormPresent || onLoginUrl) {
+    throw new Error('PICKKO_LOGIN_FAILED:login_form_still_present');
+  }
 }
 
 // 시간 문자열 → HH:MM 정규화 (내부용)

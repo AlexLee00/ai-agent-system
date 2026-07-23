@@ -308,8 +308,8 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
             pos: { cx: Math.round(rect.left + rect.width / 2), cy: Math.round(rect.top + rect.height / 2) },
             targetLabel: row.timeline.label,
             targetSlot24: row.timeline.slot24,
-            fallbackFromSlot24: mode === 'fallback_next_slot' ? startTimeArg : null,
-            fallbackUsed: mode === 'fallback_next_slot',
+            fallbackFromSlot24: null,
+            fallbackUsed: false,
             scrollDebug,
             fallbackCandidates,
           };
@@ -320,13 +320,9 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
       const exactClick = tryClickRows(targetRows, 'exact');
       if (exactClick) return exactClick;
 
-      const laterRows = rows.filter((row) => row.timeline.slot24 > startTimeArg);
-      const fallbackClick = tryClickRows(laterRows, 'fallback_next_slot');
-      if (fallbackClick) return fallbackClick;
-
       return {
         found: false,
-        reason: 'no_available_button_near_target_slot',
+        reason: 'exact_start_slot_unavailable',
         target: startTimeArg,
         targetLabel: timeDisplayArg,
         scrollDebug,
@@ -335,7 +331,7 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
     }, roomType, timeDisplay, ampm, hourMin, startTime);
 
     const looksAlreadyBlocked =
-      result?.reason === 'no_available_button_near_target_slot'
+      result?.reason === 'exact_start_slot_unavailable'
       && Array.isArray(result?.fallbackCandidates)
       && result.fallbackCandidates.length > 0
       && result.fallbackCandidates.every((candidate: any) => {

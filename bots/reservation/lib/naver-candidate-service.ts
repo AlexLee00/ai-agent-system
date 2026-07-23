@@ -187,7 +187,7 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
       .map((entry) => ({ ...entry.booking, _trackingId: entry.existing?.id || entry.booking._key }));
 
     if (candidates.length === 0) {
-      log('ℹ️ 실행 후보 없음(이미 처리했거나 파싱 실패)');
+      log('ℹ️ 실행 후보 없음(이미 처리됐거나 실행 조건 미충족)');
       return;
     }
 

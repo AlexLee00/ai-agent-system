@@ -81,42 +81,45 @@ export function createPickkoMemberService({
     await page.goto('https://pickkoadmin.com/member/write.html', { waitUntil: 'domcontentloaded' });
     await delay(2000);
 
-    const nameInput = await page.$('input[name="mb_name"]');
-    if (nameInput) {
-      await nameInput.click({ clickCount: 3 });
-      await nameInput.type(customerName, { delay: 50 });
+    const [nameInput, ph1El, ph2El, ph3El, codeEl] = await Promise.all([
+      page.$('input[name="mb_name"]'),
+      page.$('#mb_phone1'),
+      page.$('#mb_phone2'),
+      page.$('#mb_phone3'),
+      page.$('#mb_code'),
+    ]);
+    const missingControls = [
+      !nameInput ? 'mb_name' : null,
+      !ph1El ? 'mb_phone1' : null,
+      !ph2El ? 'mb_phone2' : null,
+      !ph3El ? 'mb_phone3' : null,
+      !codeEl ? 'mb_code' : null,
+    ].filter(Boolean);
+    if (missingControls.length > 0) {
+      throw new Error(`PICKKO_MEMBER_FORM_INVALID:${missingControls.join(',')}`);
     }
+
+    await nameInput.click({ clickCount: 3 });
+    await nameInput.type(customerName, { delay: 50 });
     await delay(300);
 
-    const ph1El = await page.$('#mb_phone1');
-    const ph2El = await page.$('#mb_phone2');
-    const ph3El = await page.$('#mb_phone3');
-    if (ph1El) {
-      await ph1El.click({ clickCount: 3 });
-      await ph1El.type(phone1, { delay: 50 });
-    }
+    await ph1El.click({ clickCount: 3 });
+    await ph1El.type(phone1, { delay: 50 });
     await delay(200);
-    if (ph2El) {
-      await ph2El.click({ clickCount: 3 });
-      await ph2El.type(phone2, { delay: 50 });
-    }
+    await ph2El.click({ clickCount: 3 });
+    await ph2El.type(phone2, { delay: 50 });
     await delay(200);
-    if (ph3El) {
-      await ph3El.click({ clickCount: 3 });
-      await ph3El.type(phone3, { delay: 50 });
-    }
+    await ph3El.click({ clickCount: 3 });
+    await ph3El.type(phone3, { delay: 50 });
     await delay(300);
 
-    const codeEl = await page.$('#mb_code');
-    if (codeEl) {
-      await codeEl.click({ clickCount: 3 });
-      await codeEl.type(pin, { delay: 50 });
-    }
+    await codeEl.click({ clickCount: 3 });
+    await codeEl.type(pin, { delay: 50 });
     await delay(300);
 
-    await page.evaluate((birthDate: string) => {
+    const birthSet = await page.evaluate((birthDate: string) => {
       const birthInput = document.querySelector('#mb_birth') as HTMLInputElement | null;
-      if (!birthInput) return;
+      if (!birthInput) return false;
       birthInput.removeAttribute('readonly');
       const w = window as any;
       if (typeof w.jQuery !== 'undefined' && w.jQuery(birthInput).data('datepicker')) {
@@ -126,7 +129,9 @@ export function createPickkoMemberService({
         birthInput.dispatchEvent(new Event('input', { bubbles: true }));
         birthInput.dispatchEvent(new Event('change', { bubbles: true }));
       }
+      return true;
     }, reservationDate);
+    if (!birthSet) throw new Error('PICKKO_MEMBER_FORM_INVALID:mb_birth');
     await delay(300);
 
     log('✅ 회원정보 입력완료');
@@ -134,13 +139,15 @@ export function createPickkoMemberService({
     log(`   전화: ${maskPhone(phoneNoHyphen)}`);
     log(`   생년월일: ${reservationDate}`);
 
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {}),
-      page.evaluate(() => {
-        const form = document.querySelector('form#memberFrom, form') as HTMLFormElement | null;
-        if (form) HTMLFormElement.prototype.submit.call(form);
-      }),
-    ]);
+    const navigation = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
+    const submitted = await page.evaluate(() => {
+      const form = document.querySelector('form#memberFrom') as HTMLFormElement | null;
+      if (!form) return false;
+      HTMLFormElement.prototype.submit.call(form);
+      return true;
+    });
+    if (!submitted) throw new Error('PICKKO_MEMBER_FORM_INVALID:memberFrom');
+    await navigation;
     await delay(1000);
 
     const registerUrl = page.url();

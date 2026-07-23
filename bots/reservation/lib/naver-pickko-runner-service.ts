@@ -159,7 +159,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       && process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION === '1';
   }
 
-  function runPickkoCancel({
+  async function runPickkoCancel({
     booking,
     scriptsDir,
     manualCancelScriptPath,
@@ -170,8 +170,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
     manualCancelScriptPath: string;
     onCancelled?: () => void;
   }): Promise<number> {
-    return new Promise(async (resolve) => {
-      const phoneRawForKey = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+    const phoneRawForKey = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
       const doneKey = buildCancelDoneKey(booking);
       const currentEntry = booking.bookingId
         ? await getReservation(String(booking.bookingId)).catch(() => null)
@@ -180,8 +179,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       if (await isCancelledKey(doneKey)) {
         if (!currentEntry || currentEntry.status === 'cancelled' || ['time_elapsed', 'cancelled'].includes(currentEntry.pickkoStatus)) {
           log(`ℹ️ [취소 스킵] 이미 완료된 취소 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room} (exact doneKey 존재)`);
-          resolve(0);
-          return;
+          return 0;
         }
         log(`🧹 [취소키 무시] stale doneKey 감지 — DB 상태는 ${currentEntry.status}/${currentEntry.pickkoStatus || '-'} 이므로 픽코 취소 계속 진행: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room}`);
       }
@@ -191,8 +189,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       if (await isCancelledKey(blockedKey)) {
         if (!mutationEnabled) {
           log(`ℹ️ [취소 차단 알림 스킵] 이미 수동확인 대기 알림 발송됨 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
-          resolve(PICKKO_CANCEL_BLOCKED_CODE);
-          return;
+          return PICKKO_CANCEL_BLOCKED_CODE;
         }
         log(`🧹 [취소차단키 무시] 자동취소 승인 상태이므로 stale cancel_blocked 키를 무시하고 계속 진행: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
       }
@@ -202,8 +199,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           log(`✅ [취소 건너뜀] 이미 종결 처리됨: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start} → ${currentEntry.pickkoStatus || currentEntry.status}`);
           await markSeen(String(booking.bookingId)).catch(() => {});
           await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
-          resolve(0);
-          return;
+          return 0;
         }
       }
 
@@ -227,8 +223,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           alert_level: 2,
           message: `🛡️ [스카] 네이버 취소 감지 후 픽코 자동 취소 차단\n고객: ${maskPhone(phoneRawForKey)}\n일시: ${booking.date} ${booking.start}~${booking.end}\n룸: ${booking.room || '-'}\n조치: 수동 확인 후 픽코 취소 필요`,
         }));
-        resolve(PICKKO_CANCEL_BLOCKED_CODE);
-        return;
+        return PICKKO_CANCEL_BLOCKED_CODE;
       }
 
       const args = buildPickkoCancelArgs(manualCancelScriptPath, booking);
@@ -302,58 +297,88 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
         });
       };
 
-      const spawnCancel = () => {
-        const child = spawnImpl(NODE_BIN, args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
-        child.stdout.on('data', (chunk) => safeWriteToStream(process.stdout, chunk.toString()));
-        child.stderr.on('data', (chunk) => safeWriteToStream(process.stderr, chunk.toString()));
-        return child;
-      };
-
-      const isAlreadyGoneOutput = (buf: string) => /취소 대상 예약 미발견/.test(String(buf || ''));
-
-      const child = spawnCancel();
-      let firstOutputBuf = '';
-      child.stdout.on('data', (chunk) => { firstOutputBuf += chunk.toString(); });
-      child.stderr.on('data', (chunk) => { firstOutputBuf += chunk.toString(); });
-      child.on('close', async (code) => {
-        if (code === 0 || isAlreadyGoneOutput(firstOutputBuf)) {
-          await onCancelSuccess(false);
-          resolve(0);
+      const runCancelAttempt = (): Promise<{ code: number; output: string }> => new Promise((resolveAttempt) => {
+        let child: any;
+        let output = '';
+        let settled = false;
+        let timedOut = false;
+        let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+        let forceKillHandle: ReturnType<typeof setTimeout> | null = null;
+        let hardStopHandle: ReturnType<typeof setTimeout> | null = null;
+        const finish = (code: number) => {
+          if (settled) return;
+          settled = true;
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          if (forceKillHandle) clearTimeout(forceKillHandle);
+          if (hardStopHandle) clearTimeout(hardStopHandle);
+          resolveAttempt({ code: timedOut ? 1 : code, output });
+        };
+        try {
+          child = spawnImpl(NODE_BIN, args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (error: any) {
+          output = `spawn failed: ${error?.message || String(error)}`;
+          resolveAttempt({ code: 1, output });
           return;
         }
-
-        log(`⚠️ 픽코 취소 실패 (exit ${code}) — 60초 후 1회 재시도: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
-        const firstCode = code;
-        setTimeoutImpl(() => {
-          const retryChild = spawnCancel();
-          let retryOutputBuf = '';
-          retryChild.stdout.on('data', (chunk) => { retryOutputBuf += chunk.toString(); });
-          retryChild.stderr.on('data', (chunk) => { retryOutputBuf += chunk.toString(); });
-          retryChild.on('close', async (retryCode) => {
-            if (retryCode === 0 || isAlreadyGoneOutput(retryOutputBuf)) {
-              if (retryCode !== 0) {
-                log(`ℹ️ 픽코 취소 대상이 이미 사라짐 → 취소 완료로 간주: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
-              }
-              await onCancelSuccess(true);
-            } else {
-              await onCancelFail(retryCode, firstCode);
-              if (onCancelRetryFailure) {
-                await Promise.resolve(onCancelRetryFailure({
-                  booking,
-                  cancelKey: doneKey,
-                  output: `${firstOutputBuf}\n${retryOutputBuf}`,
-                  exitCode: retryCode,
-                  firstExitCode: firstCode,
-                })).catch((error: any) => {
-                  log(`⚠️ [취소 재시도 큐] 실패 hook 실패: ${error?.message || String(error)}`);
-                });
-              }
-            }
-            resolve(retryCode ?? 1);
-          });
-        }, 60000);
+        const append = (stream: NodeJS.WriteStream, chunk: any) => {
+          const text = chunk.toString();
+          output += text;
+          safeWriteToStream(stream, text);
+        };
+        child.stdout.on('data', (chunk: any) => append(process.stdout, chunk));
+        child.stderr.on('data', (chunk: any) => append(process.stderr, chunk));
+        child.once('error', (error: any) => {
+          output += `\nchild error: ${error?.message || String(error)}`;
+          finish(1);
+        });
+        child.once('close', (code: number | null) => finish(code ?? 1));
+        const configuredTimeoutMs = Number(process.env.PICKKO_CANCEL_TIMEOUT_MS || 6 * 60 * 1000);
+        const timeoutMs = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+          ? configuredTimeoutMs
+          : 6 * 60 * 1000;
+        timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          output += `\nPICKKO_FAILURE_STAGE=CHILD_TIMEOUT child timeout after ${timeoutMs}ms`;
+          terminateProcessTree(child.pid, 'SIGTERM', log);
+          try { child.kill('SIGTERM'); } catch (_error) {}
+          forceKillHandle = setTimeout(() => {
+            terminateProcessTree(child.pid, 'SIGKILL', log);
+            try { child.kill('SIGKILL'); } catch (_error) {}
+          }, 5_000);
+          forceKillHandle.unref?.();
+          hardStopHandle = setTimeout(() => finish(1), 10_000);
+          hardStopHandle.unref?.();
+        }, timeoutMs);
+        timeoutHandle.unref?.();
       });
-    });
+
+      const first = await runCancelAttempt();
+      if (first.code === 0) {
+        await onCancelSuccess(false);
+        return 0;
+      }
+
+      log(`⚠️ 픽코 취소 실패 (exit ${first.code}) — 60초 후 1회 재시도: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
+      await new Promise<void>((resolveDelay) => { setTimeoutImpl(resolveDelay, 60000); });
+      const retry = await runCancelAttempt();
+      if (retry.code === 0) {
+        await onCancelSuccess(true);
+        return 0;
+      }
+
+      await onCancelFail(retry.code, first.code);
+      if (onCancelRetryFailure) {
+        await Promise.resolve(onCancelRetryFailure({
+          booking,
+          cancelKey: doneKey,
+          output: `${first.output}\n${retry.output}`,
+          exitCode: retry.code,
+          firstExitCode: first.code,
+        })).catch((error: any) => {
+          log(`⚠️ [취소 재시도 큐] 실패 hook 실패: ${error?.message || String(error)}`);
+        });
+      }
+    return retry.code;
   }
 
   function runPickko({
@@ -369,7 +394,8 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
     accurateScriptPath: string;
     maxRetries: number;
   }): Promise<number> {
-    return new Promise(async (resolve) => {
+    return new Promise((resolve) => {
+      void (async () => {
       const normalized = transformAndNormalizeData(booking);
       if (!normalized) {
         log(`❌ 픽코 호출 전 변환 실패: ${JSON.stringify(booking)}`);
@@ -446,7 +472,10 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
 
       const child = spawnImpl(NODE_BIN, args, { cwd: scriptsDir, stdio: ['ignore', 'pipe', 'pipe'] });
       let outputBuf = '';
-      const accurateTimeoutMs = Number(process.env.PICKKO_ACCURATE_TIMEOUT_MS || 12 * 60 * 1000);
+      const configuredAccurateTimeoutMs = Number(process.env.PICKKO_ACCURATE_TIMEOUT_MS || 12 * 60 * 1000);
+      const accurateTimeoutMs = Number.isFinite(configuredAccurateTimeoutMs) && configuredAccurateTimeoutMs > 0
+        ? configuredAccurateTimeoutMs
+        : 12 * 60 * 1000;
       let timedOut = false;
       let sigkillHandle: ReturnType<typeof setTimeout> | null = null;
       const timeoutDescendantPids = new Set<number>();
@@ -457,22 +486,22 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           outputBuf += `\nPICKKO_FAILURE_STAGE=CHILD_TIMEOUT ${message}\nError: ${message}\n`;
           log(`⏱️ [픽코 타임아웃] ${message} — 자식 프로세스 종료 시도: ${maskPhone(normalized.phone)} ${normalized.date} ${normalized.start}`);
           terminateProcessTree(child.pid, 'SIGTERM', log, timeoutDescendantPids);
-          child.kill('SIGTERM');
+          try { child.kill('SIGTERM'); } catch (_error) {}
           sigkillHandle = setTimeoutImpl(() => {
             for (const pid of Array.from(timeoutDescendantPids).reverse()) {
               killPid(pid, 'SIGKILL');
             }
             if (!child.pid) return;
             terminateProcessTree(child.pid, 'SIGKILL', log);
-            child.kill('SIGKILL');
+            try { child.kill('SIGKILL'); } catch (_error) {}
           }, 5000);
         }, accurateTimeoutMs)
         : null;
       child.stdout.on('data', (chunk) => { const text = chunk.toString(); safeWriteToStream(process.stdout, text); outputBuf += text; });
       child.stderr.on('data', (chunk) => { const text = chunk.toString(); safeWriteToStream(process.stderr, text); outputBuf += text; });
-      child.on('close', async (code) => {
+      const handleClose = async (code: number | null) => {
         if (timeoutHandle) clearTimeout(timeoutHandle);
-        if (sigkillHandle && !timedOut) clearTimeout(sigkillHandle);
+        if (sigkillHandle) clearTimeout(sigkillHandle);
         if (timedOut && code === 0) code = 1;
         log(`🤖 픽코 실행 종료 (exit code: ${code})`);
         const stageMatch = outputBuf.match(/PICKKO_FAILURE_STAGE=([A-Z0-9_]+)/);
@@ -543,6 +572,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
         const paymentStageEntered = /PICKKO_PAYMENT_(?:STAGE_ENTERED|SUBMIT_STARTED)/.test(outputBuf);
         const needsManualPendingFollowup = failureStage === 'ALREADY_REGISTERED'
           || String(failureStage || '').startsWith('PAYMENT')
+          || /PICKKO_SAVE_SUBMIT_STARTED/.test(outputBuf)
           || paymentStageEntered;
 
         if (bookingId) {
@@ -647,6 +677,20 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
         });
         log(`❌ [실패] 픽코 예약이 실패했습니다 (code=${code})`);
         resolve(code ?? 1);
+      };
+      child.once('error', (error: Error) => {
+        outputBuf += `\nPICKKO_FAILURE_STAGE=CHILD_SPAWN_ERROR Error: ${error.message}\n`;
+        log(`❌ [픽코 실행 오류] ${error.message}`);
+      });
+      child.once('close', (code) => {
+        void handleClose(code).catch((error: any) => {
+          log(`❌ [픽코 종료 처리 오류] ${error?.message || String(error)}`);
+          resolve(1);
+        });
+      });
+      })().catch((error: any) => {
+        log(`❌ [픽코 실행 준비 오류] ${error?.message || String(error)}`);
+        resolve(1);
       });
     });
   }

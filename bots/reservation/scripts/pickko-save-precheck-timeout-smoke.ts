@@ -60,6 +60,27 @@ async function main() {
   assert.ok(caught, 'hanging save precheck operation should fail fast');
   assert.equal(caught.stageCode, 'SAVE_PRECHECK_TIMEOUT');
 
+  process.env.PICKKO_SAVE_PRECHECK_STEP_TIMEOUT_MS = '1';
+  let delayedClickCount = 0;
+  const delayedButtonPage = {
+    $: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { click: async () => { delayedClickCount += 1; } };
+    },
+  };
+  await assert.rejects(
+    service.submitDraft(delayedButtonPage),
+    (error) => error?.stageCode === 'SAVE_PRECHECK_TIMEOUT',
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(delayedClickCount, 0, 'timed-out work must not click the submit button later');
+
+  const missingButtonPage = { $: async () => null };
+  await assert.rejects(
+    service.submitDraft(missingButtonPage),
+    (error) => error?.stageCode === 'SAVE_SUBMIT_CONTROL_MISSING',
+  );
+
   console.log('✅ pickko save-precheck timeout smoke ok');
 }
 

@@ -6,6 +6,7 @@ const http = require('node:http');
 const {
   buildCancelPipelineStatus,
   buildReservationSyncCheck,
+  buildSkaRuntimeContractStatus,
 } = require('../../../lib/ska-ops-read-service');
 
 const DEFAULT_HOST = '127.0.0.1';
@@ -19,6 +20,10 @@ const SKA_OPS_MCP_TOOLS = [
   {
     name: 'reservation-sync-check',
     description: 'Compare reservation DB rows with a fresh, complete Pickko monitor snapshot. Read-only advisory.',
+  },
+  {
+    name: 'runtime-contract-status',
+    description: 'Report read-only SKA monitor config drift, snapshot freshness, reservation date hygiene, and historical raw-feed status.',
   },
 ];
 
@@ -46,6 +51,9 @@ async function callSkaOpsTool(name, args = {}, deps = {}) {
   }
   if (name === 'reservation-sync-check') {
     return buildReservationSyncCheck(args, deps);
+  }
+  if (name === 'runtime-contract-status') {
+    return buildSkaRuntimeContractStatus(args, deps);
   }
   throw new Error(`unknown_tool:${name}`);
 }

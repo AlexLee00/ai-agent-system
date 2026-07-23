@@ -143,8 +143,10 @@ async function runSyncCheckContract() {
   assert.equal(sync.counts.pickkoOnly, 1);
   assert.equal(sync.counts.pickkoRows, 3);
   assert.equal(sync.counts.pendingSnapshotRefresh, 2);
-  assert.equal(sync.pendingSnapshotRefresh[0].id, 4);
-  assert.equal(sync.pendingSnapshotRefresh[1].id, 5);
+  assert.match(sync.pendingSnapshotRefresh[0].reservationRef, /^[0-9a-f]{12}$/);
+  assert.match(sync.pendingSnapshotRefresh[1].reservationRef, /^[0-9a-f]{12}$/);
+  assert.notEqual(sync.pendingSnapshotRefresh[0].reservationRef, sync.pendingSnapshotRefresh[1].reservationRef);
+  assert.equal(Object.prototype.hasOwnProperty.call(sync.pendingSnapshotRefresh[0], 'id'), false);
 
   const stale = await buildReservationSyncCheck({ date: '2026-07-22' }, {
     queryReadonly: mock.queryReadonly,

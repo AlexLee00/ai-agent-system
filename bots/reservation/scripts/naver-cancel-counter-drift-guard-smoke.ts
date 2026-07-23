@@ -6,30 +6,34 @@ const { createNaverMonitorCycleService } = require('../lib/naver-monitor-cycle-s
 
 process.env.PICKKO_CANCEL_ENABLE = '1';
 
-function createPage() {
+function createPage({ sessionOk = true } = {}) {
   return {
     goto: async () => {},
     waitForNetworkIdle: async () => {},
-    evaluate: async () => true,
+    evaluate: async () => sessionOk,
   };
 }
 
-function createService({ currentCancelledList }) {
+function createService({ currentCancelledList, loginRecovered = true }) {
   const logs = [];
   const alerts = [];
   const resolved = [];
+  let confirmedCycleCalls = 0;
   const service = createNaverMonitorCycleService({
     log: (message) => logs.push(String(message)),
     ensureHomeFromCalendar: async () => {},
-    naverLogin: async () => true,
+    naverLogin: async () => loginRecovered,
     closePopupsIfPresent: async () => {},
     confirmedCycleService: {
-      processConfirmedCycle: async () => ({
-        confirmedCount: 0,
-        cancelledCount: 1,
-        cancelledHref: 'https://example.test/cancelled',
-        currentConfirmedList: [],
-      }),
+      processConfirmedCycle: async () => {
+        confirmedCycleCalls += 1;
+        return {
+          confirmedCount: 0,
+          cancelledCount: 1,
+          cancelledHref: 'https://example.test/cancelled',
+          currentConfirmedList: [],
+        };
+      },
     },
     cancelDetectionService: {
       processCancelTab: async ({ cycleNewCancelDetections }) => ({
@@ -53,12 +57,12 @@ function createService({ currentCancelledList }) {
     getModeSuffix: () => '',
     delay: async () => {},
   });
-  return { service, logs, alerts, resolved };
+  return { service, logs, alerts, resolved, get confirmedCycleCalls() { return confirmedCycleCalls; } };
 }
 
-async function runCycle(service) {
+async function runCycle(service, page = createPage()) {
   return service.executeCycle({
-    page: createPage(),
+    page,
     checkCount: 3,
     startTime: Date.now(),
     monitorInterval: 1,
@@ -88,6 +92,14 @@ async function main() {
   await runCycle(missing.service);
   assert.strictEqual(missing.alerts.length, 1, 'missing cancel tab evidence should still emit drift alert');
   assert.strictEqual(missing.resolved.length, 0, 'missing cancel tab evidence should not resolve drift alert');
+
+  const expired = createService({ currentCancelledList: [], loginRecovered: false });
+  await assert.rejects(
+    runCycle(expired.service, createPage({ sessionOk: false })),
+    /naver_session_recovery_failed/,
+    'failed reauthentication must stop the cycle before scraping',
+  );
+  assert.strictEqual(expired.confirmedCycleCalls, 0, 'login failure must not parse the unauthenticated page');
 
   console.log('✅ naver cancel counter drift guard smoke ok');
 }

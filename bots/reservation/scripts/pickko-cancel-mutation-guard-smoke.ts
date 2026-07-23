@@ -147,6 +147,94 @@ async function main() {
   assert.ok(staleBlockedLogs.some((line) => line.includes('취소차단키 무시')));
   assert.ok(staleBlockedKeys.has('cancel_done|01012345678|2026-06-21|15:00|18:00|A1'));
 
+  const ambiguousKeys = new Set();
+  const ambiguousUpdates = [];
+  let ambiguousSpawnCount = 0;
+  const ambiguousService = createNaverPickkoRunnerService({
+    isCancelledKey: async (key) => ambiguousKeys.has(key),
+    getReservation: async () => null,
+    markSeen: async () => {},
+    resolveAlertsByBooking: async () => {},
+    updateBookingState: async (id, item, state) => { ambiguousUpdates.push({ id, item, state }); },
+    updateReservation: async () => {},
+    addCancelledKey: async (key) => { ambiguousKeys.add(key); },
+    sendAlert: async () => {},
+    ragSaveReservation: async () => {},
+    publishReservationAlert: async () => {},
+    autoBugReport: () => {},
+    transformAndNormalizeData: (item) => item,
+    verifyRecoverablePickkoFailure: async () => false,
+    reconcileSlotDuplicatesAfterRecovery: async () => {},
+    buildPickkoCancelArgs: () => ['cancel.js'],
+    buildPickkoAccurateArgs: () => ['accurate.js'],
+    buildPickkoCancelManualMessage: () => 'manual cancel',
+    buildPickkoRetryExceededMessage: () => 'retry exceeded',
+    buildPickkoTimeElapsedMessage: () => 'time elapsed',
+    buildPickkoManualFailureMessage: () => 'manual failure',
+    maskPhone: (phone) => String(phone || ''),
+    toKst: () => '2026-06-07',
+    log: () => {},
+    setTimeoutImpl: (callback) => {
+      setImmediate(callback);
+      return 1;
+    },
+    spawnImpl: () => {
+      ambiguousSpawnCount += 1;
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      setImmediate(() => {
+        child.stderr.emit('data', Buffer.from('[4단계] 취소 대상 예약 미발견'));
+        child.emit('close', 1);
+      });
+      return child;
+    },
+  });
+  const ambiguousResult = await ambiguousService.runPickkoCancel({
+    booking: { ...booking, bookingId: 'ambiguous-cancel' },
+    scriptsDir: __dirname,
+    manualCancelScriptPath: '/tmp/pickko-cancel.js',
+  });
+  assert.strictEqual(ambiguousResult, 1, 'reservation-not-found output must not be promoted to cancellation success');
+  assert.strictEqual(ambiguousSpawnCount, 2, 'an unverified failure may use the existing one-shot retry');
+  assert.strictEqual(ambiguousKeys.has('cancel_done|01012345678|2026-06-21|15:00|18:00|A1'), false);
+  assert.strictEqual(ambiguousUpdates.length, 0, 'unverified cancellation must not mutate reservation state');
+
+  const preflightFailureService = createNaverPickkoRunnerService({
+    isCancelledKey: async () => { throw new Error('readonly_db_probe_failure'); },
+    getReservation: async () => null,
+    markSeen: async () => {},
+    resolveAlertsByBooking: async () => {},
+    updateBookingState: async () => {},
+    updateReservation: async () => {},
+    addCancelledKey: async () => {},
+    sendAlert: async () => {},
+    ragSaveReservation: async () => {},
+    publishReservationAlert: async () => {},
+    autoBugReport: () => {},
+    transformAndNormalizeData: (item) => item,
+    verifyRecoverablePickkoFailure: async () => false,
+    reconcileSlotDuplicatesAfterRecovery: async () => {},
+    buildPickkoCancelArgs: () => ['cancel.js'],
+    buildPickkoAccurateArgs: () => ['accurate.js'],
+    buildPickkoCancelManualMessage: () => 'manual cancel',
+    buildPickkoRetryExceededMessage: () => 'retry exceeded',
+    buildPickkoTimeElapsedMessage: () => 'time elapsed',
+    buildPickkoManualFailureMessage: () => 'manual failure',
+    maskPhone: (phone) => String(phone || ''),
+    toKst: () => '2026-06-07',
+    log: () => {},
+  });
+  await assert.rejects(
+    preflightFailureService.runPickkoCancel({
+      booking: { ...booking, bookingId: 'preflight-failure' },
+      scriptsDir: __dirname,
+      manualCancelScriptPath: '/tmp/pickko-cancel.js',
+    }),
+    /readonly_db_probe_failure/,
+    'preflight DB errors must reject instead of leaving a pending Promise',
+  );
+
   restoreEnv();
   console.log('✅ pickko cancel mutation guard smoke ok');
 }
