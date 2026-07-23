@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 const assert = require('assert');
 
 async function main() {
-  const skills = await import('../a2a/skills/index.ts');
+  const skills = await import('../a2a/skills/index' + '.ts');
   const pass = (await skills.runQualityGate({
     builder: { pass: true },
     reviewer: { pass: true },
