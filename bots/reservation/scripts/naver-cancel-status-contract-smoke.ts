@@ -115,6 +115,24 @@ async function main() {
   assert.deepEqual(actionable.addedKeys, ['cancelid|cancelled-only']);
   assert.equal(actionable.pickkoCancels.length, 1);
 
+  const untrackedOnly = booking({ bookingId: 'untracked-cancelled-only' });
+  const untracked = createService({
+    cancelledRows: [untrackedOnly],
+    confirmedRows: [],
+    tracked: false,
+  });
+  const untrackedResult = await untracked.service.processStatusCancelledList({
+    page: createPage(),
+    cancelledHref: 'https://partner.booking.naver.com/bizes/596871/booking-list-view?countFilter=CANCELLED',
+    todaySeoul: '2099-01-01',
+    naverUrl: 'https://example.test/naver',
+    cycleNewCancelDetections: 0,
+  });
+  assert.equal(untrackedResult.cycleNewCancelDetections, 1, 'RC04-only untracked booking should be recorded once');
+  assert.deepEqual(untracked.addedKeys, ['cancelid|untracked-cancelled-only']);
+  assert.deepEqual(untracked.pickkoCancels, [], 'untracked booking must not call Pickko cancel');
+  assert.ok(untracked.logs.some((line) => line.includes('미추적 취소건 키 등록 후 픽코 취소 스킵')));
+
   assert.deepEqual(Object.keys(actionable.service).sort(), [
     'processCancelTab',
     'processStatusCancelledList',

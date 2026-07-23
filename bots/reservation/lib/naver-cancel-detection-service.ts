@@ -108,8 +108,9 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
       log(`🧹 [${sourceLabel}] stale 취소키 감지 — DB 상태는 ${formatTrackedState(tracked)} 이므로 픽코 취소 계속 진행: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''}`);
     }
     if (!tracked) {
-      log(`ℹ️ [${sourceLabel}] 미추적 취소건 픽코 취소 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
-      return cycleNewCancelDetections;
+      await addCancelledKey(cancelKey);
+      log(`ℹ️ [${sourceLabel}] 미추적 취소건 키 등록 후 픽코 취소 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
+      return cycleNewCancelDetections + 1;
     }
     const result = await runPickkoCancel(withTrackedBookingId(candidate, tracked), cancelKey);
     if (result === 0) {
