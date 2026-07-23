@@ -342,8 +342,31 @@ export async function startServer({ port = null, host = DEFAULT_HOST } = {}) {
   return { server, port: address.port, host };
 }
 
+export function installShutdownHandlers(server, deps = {}) {
+  const processRef = deps.processRef || process;
+  const timeoutMs = boundedInt(deps.timeoutMs, 5000, 100, 30000);
+  let shuttingDown = false;
+
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    const forceExit = setTimeout(() => processRef.exit(1), timeoutMs);
+    forceExit.unref?.();
+    server.close((error) => {
+      clearTimeout(forceExit);
+      processRef.exit(error ? 1 : 0);
+    });
+    server.closeIdleConnections?.();
+  };
+
+  processRef.once('SIGTERM', shutdown);
+  processRef.once('SIGINT', shutdown);
+  return shutdown;
+}
+
 async function main() {
-  const { port, host } = await startServer();
+  const { server, port, host } = await startServer();
+  installShutdownHandlers(server);
   console.log(JSON.stringify({ ok: true, service: 'sigma-library-mcp', host, port, mode: 'read_only' }));
 }
 

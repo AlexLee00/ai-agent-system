@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +10,7 @@ import {
   SIGMA_LIBRARY_MCP_TOOLS,
   callSigmaLibraryTool,
   createSigmaLibraryMcpServer,
+  installShutdownHandlers,
   startServer,
 } from '../mcp/sigma-library-mcp/src/server.ts';
 
@@ -194,9 +196,34 @@ async function assertRpcServer() {
   }
 }
 
+function assertShutdownHandlers() {
+  const processRef = new EventEmitter();
+  const exits = [];
+  processRef.exit = (code) => exits.push(code);
+  let closeCalls = 0;
+  let closeIdleCalls = 0;
+  const server = {
+    close(callback) {
+      closeCalls += 1;
+      callback();
+    },
+    closeIdleConnections() {
+      closeIdleCalls += 1;
+    },
+  };
+
+  installShutdownHandlers(server, { processRef, timeoutMs: 100 });
+  processRef.emit('SIGTERM');
+  processRef.emit('SIGINT');
+  assert.equal(closeCalls, 1);
+  assert.equal(closeIdleCalls, 1);
+  assert.deepEqual(exits, [0]);
+}
+
 async function main() {
   await assertDirectTools();
   await assertRpcServer();
+  assertShutdownHandlers();
   console.log(JSON.stringify({ ok: true, smoke: 'sigma-library-mcp', tools: SIGMA_LIBRARY_MCP_TOOLS.map((tool) => tool.name) }, null, 2));
 }
 
