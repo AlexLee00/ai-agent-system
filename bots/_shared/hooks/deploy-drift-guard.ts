@@ -15,6 +15,7 @@ export const DEFAULT_DEPLOY_DRIFT_TARGETS = [
       'JAY_GROWTH_ENABLED',
       'JAY_HUB_PLAN_INTEGRATION',
       'JAY_INCIDENT_STORE_ENABLED',
+      'JAY_LIFECYCLE_INJECT_ENABLED',
     ],
   },
   { label: 'ai.jay.growth', repoPath: 'bots/jay/launchd/ai.jay.growth.plist' },
