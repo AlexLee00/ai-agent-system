@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // @ts-nocheck
+// Canonical smoke: operations DB contact is forbidden; persistence uses in-memory stores.
 
 import assert from 'assert/strict';
-import * as db from '../shared/db.ts';
 import {
   getParameter,
   listParameterHistory,
@@ -22,42 +22,95 @@ import { LUNA_TOSS_PAPER_MIRROR_CONFIRM } from '../shared/luna-toss-paper-mirror
 import { evaluateLunaAutonomousCommand } from '../shared/luna-autonomous-command-policy.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-const ROLLBACK_SENTINEL = 'luna_registry_paramstore_smoke_rollback';
-
-async function withSmokeRollback(work: any) {
-  let output;
-  try {
-    await db.withTransaction(async (tx: any) => {
-      output = await work({
-        queryFn: tx.query,
-        runFn: tx.run,
+function createMemoryStores() {
+  const parameters = [];
+  const registry = new Map();
+  const queryFn = async (sql: string, params: any[] = []) => {
+    if (/FROM luna_parameter_store/i.test(sql)) {
+      const [key, scope] = params;
+      const effectiveAt = params[2] == null
+        ? Infinity
+        : params[2] instanceof Date ? params[2].getTime() : Date.parse(params[2]);
+      return parameters
+        .filter((row) => row.key === key && row.scope === scope && Date.parse(row.effective_from) <= effectiveAt)
+        .sort((a, b) => Date.parse(b.effective_from) - Date.parse(a.effective_from) || b.id - a.id);
+    }
+    if (/FROM luna_component_registry/i.test(sql)) {
+      const row = registry.get(params[0]);
+      return row ? [row] : [];
+    }
+    throw new Error(`unexpected_registry_paramstore_query:${sql}`);
+  };
+  const runFn = async (sql: string, params: any[] = []) => {
+    if (/INSERT INTO luna_parameter_store/i.test(sql)) {
+      const row = {
+        id: parameters.length + 1,
+        key: params[0],
+        value: JSON.parse(params[1]),
+        scope: params[2],
+        tier: params[3],
+        effective_from: new Date(params[4]).toISOString(),
+        evidence: params[5],
+        changed_by: params[6],
+        prev_value: params[7] == null ? null : JSON.parse(params[7]),
+        created_at: new Date(Date.parse('2026-06-19T00:00:00.000Z') + parameters.length).toISOString(),
+      };
+      parameters.push(row);
+      return { rowCount: 1, rows: [row] };
+    }
+    if (/INSERT INTO luna_component_registry/i.test(sql)) {
+      if (/fixture_old_mode/i.test(sql)) {
+        const inserted = !registry.has(params[0]);
+        registry.set(params[0], {
+          component: params[0],
+          current_mode: 'fixture_old_mode',
+          target_mode: 'fixture_old_target',
+          promotion_criteria: {},
+          status: 'proposed',
+          sample_count: 123,
+          last_evaluated_at: params[1],
+          registered_at: params[2],
+          notes: 'before seed',
+        });
+        return { rowCount: 1, rows: [{ inserted }] };
+      }
+      const existing = registry.get(params[0]);
+      registry.set(params[0], {
+        ...(existing || {
+          component: params[0],
+          status: 'active',
+          sample_count: 0,
+          last_evaluated_at: null,
+          registered_at: '2026-06-19T00:00:00.000Z',
+        }),
+        current_mode: params[1],
+        target_mode: params[2],
+        promotion_criteria: JSON.parse(params[3]),
+        notes: params[4],
       });
-      throw new Error(ROLLBACK_SENTINEL);
-    });
-  } catch (error) {
-    if (error?.message !== ROLLBACK_SENTINEL) throw error;
-    return output;
-  } finally {
-    reloadParameters();
-  }
-  throw new Error('luna_registry_paramstore_smoke_expected_rollback');
+      return { rowCount: 1, rows: [{ inserted: !existing }] };
+    }
+    throw new Error(`unexpected_registry_paramstore_run:${sql}`);
+  };
+  return { parameters, registry, queryFn, runFn };
 }
 
 async function main() {
   const stamp = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const envKey = `LUNA_PARAM_SMOKE_MISSING_${stamp.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}`;
-  process.env[envKey] = '{"fallback":true}';
   const missingKey = `smoke.missing.${stamp}`;
   reloadParameters();
   const envFallback = await getParameter(missingKey, 'global', {
     bypassCache: true,
-    env: { [envKey]: process.env[envKey] },
+    env: { [envKey]: '{"fallback":true}' },
     queryFn: async () => [],
   });
   assert.deepEqual(envFallback.value, { fallback: true });
   assert.equal(envFallback.source, 'env');
 
-  const transactionalResult = await withSmokeRollback(async (storeDeps: any) => {
+  const memoryStores = createMemoryStores();
+  const storeDeps = { queryFn: memoryStores.queryFn, runFn: memoryStores.runFn };
+  const transactionalResult = await (async () => {
     const autoKey = `smoke.auto.${stamp}`;
     await setParameter({ key: autoKey, value: { pass: true }, evidence: 'smoke', changedBy: 'system' }, storeDeps);
     const autoValue = await getParameter(autoKey, 'global', { bypassCache: true, queryFn: storeDeps.queryFn });
@@ -90,15 +143,9 @@ async function main() {
     const futureNow = await getParameter(futureKey, 'global', { bypassCache: true, queryFn: storeDeps.queryFn });
     assert.equal(futureNow, null);
     return { historyRows: history.length };
-  });
-
-  const rolledBackRows = await db.query(
-    `SELECT COUNT(*)::int AS count
-       FROM luna_parameter_store
-      WHERE key IN ($1, $2, $3)`,
-    [`smoke.auto.${stamp}`, `smoke.history.${stamp}`, `smoke.future.${stamp}`]
-  );
-  assert.equal(Number(rolledBackRows?.[0]?.count || 0), 0);
+  })();
+  assert.equal(memoryStores.parameters.length, 4);
+  reloadParameters();
 
   assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 31);
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
@@ -153,7 +200,7 @@ async function main() {
   assert.deepEqual(stalledResolutionSampleAttached.map((row) => row.sample_count), [4035, 47, 6, 328]);
   assert.equal(stalledResolutionSampleSqls.length, 4);
 
-  const registryPreservation = await withSmokeRollback(async (storeDeps: any) => {
+  const registryPreservation = await (async () => {
     const registeredAt = '2026-01-02T03:04:05.000Z';
     const lastEvaluatedAt = '2026-02-03T04:05:06.000Z';
     await storeDeps.runFn(
@@ -184,7 +231,7 @@ async function main() {
     assert.equal(new Date(rows[0].last_evaluated_at).toISOString(), lastEvaluatedAt);
     assert.equal(new Date(rows[0].registered_at).toISOString(), registeredAt);
     return { applied: seedResult.applied, inserted: seedResult.inserted, updated: seedResult.updated };
-  });
+  })();
   assert.ok(registryPreservation.applied >= 1);
 
   const assessmentNow = '2026-06-19T00:00:00.000Z';
@@ -563,7 +610,7 @@ async function main() {
       approveSystemRejected: true,
       historyRows: transactionalResult.historyRows,
       futureExcluded: true,
-      rollbackVerified: true,
+      inMemoryRows: memoryStores.parameters.length,
     },
     registry: {
       seedCount: seedDryRun.seeded,

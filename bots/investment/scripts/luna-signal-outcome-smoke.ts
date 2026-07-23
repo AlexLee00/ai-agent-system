@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // @ts-nocheck
+// Canonical smoke: operations DB contact is forbidden; persistence uses an in-memory sink.
 
 import assert from 'assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as db from '../shared/db.ts';
 import { ensureStrategySignalsSchema } from '../shared/luna-strategy-families.ts';
 import {
   LUNA_SIGNAL_OUTCOME_CONFIRM,
@@ -19,7 +19,6 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIGRATION_PATH = path.join(INVESTMENT_ROOT, 'migrations', '20260619000004_luna_strategy_signal_outcomes.sql');
-const ROLLBACK_SENTINEL = 'luna_signal_outcome_smoke_rollback';
 
 function signal(overrides: any = {}) {
   return {
@@ -45,20 +44,6 @@ function bar(day: number, extra: any = {}) {
     close: extra.close ?? 100,
     volume: extra.volume ?? 1000,
   };
-}
-
-async function withRollback(work: any) {
-  let output;
-  try {
-    await db.withTransaction(async (tx: any) => {
-      output = await work(tx);
-      throw new Error(ROLLBACK_SENTINEL);
-    });
-  } catch (error) {
-    if (error?.message !== ROLLBACK_SENTINEL) throw error;
-    return output;
-  }
-  throw new Error('luna_signal_outcome_smoke_expected_rollback');
 }
 
 async function main() {
@@ -115,35 +100,40 @@ async function main() {
   assert.equal(smallSummary.groups[0].avgRealizedR, null);
   assert.equal(smallSummary.groups[0].provisionalWinRate, 0.25);
 
-  const transactional = await withRollback(async (tx: any) => {
-    await ensureStrategySignalsSchema(tx.run);
-    await tx.run(migrationSql);
-    const insert = await tx.run(
-      `INSERT INTO luna_strategy_signals
-         (market, symbol, family, signal_type, candle_ts, price, stop, target, rr, regime, matched, rule_version, details)
-       VALUES ('domestic', $1, 'testah_pullback', 'entry', $2, 100, 90, 120, 2, '{"dominant":"sideways"}'::jsonb, false, 'v1', '{}'::jsonb)
-       RETURNING id`,
-      [`SMOKE${Date.now()}`, '2026-06-01T00:00:00.000Z'],
-    );
-    const signalId = insert.rows?.[0]?.id;
-    const openOutcome = evaluateSignalOutcome(signal({ id: signalId }), [
-      bar(1, { high: 110, low: 95, close: 104 }),
-    ], { maxBars: 2, requireSignalId: true });
-    await upsertSignalOutcome(openOutcome, tx.run);
-    const winOutcome = evaluateSignalOutcome(signal({ id: signalId }), [
-      bar(1, { high: 121, low: 95, close: 120 }),
-    ], { maxBars: 2, requireSignalId: true });
-    await upsertSignalOutcome(winOutcome, tx.run);
-    const rows = await tx.query(
-      `SELECT COUNT(*)::int AS count, MAX(outcome) AS outcome
-         FROM luna_strategy_signal_outcomes
-        WHERE signal_id = $1`,
-      [signalId],
-    );
-    assert.equal(Number(rows?.[0]?.count || 0), 1);
-    assert.equal(rows?.[0]?.outcome, 'win');
-    return { upsertOutcome: rows?.[0]?.outcome };
-  });
+  const outcomeRows = new Map();
+  const runFn = async (sql: string, params: any[] = []) => {
+    if (/INSERT INTO luna_strategy_signals/i.test(sql)) {
+      return { rowCount: 1, rows: [{ id: 101 }] };
+    }
+    if (/INSERT INTO luna_strategy_signal_outcomes/i.test(sql)) {
+      const signalId = String(params[0]);
+      const existing = outcomeRows.get(signalId);
+      outcomeRows.set(signalId, { id: existing?.id || outcomeRows.size + 1, outcome: params[10], params });
+      return { rowCount: 1, rows: [{ id: outcomeRows.get(signalId).id }] };
+    }
+    return { rowCount: 0, rows: [] };
+  };
+  await ensureStrategySignalsSchema(runFn);
+  await runFn(migrationSql);
+  const insert = await runFn(
+    `INSERT INTO luna_strategy_signals
+       (market, symbol, family, signal_type, candle_ts, price, stop, target, rr, regime, matched, rule_version, details)
+     VALUES ('domestic', $1, 'testah_pullback', 'entry', $2, 100, 90, 120, 2, '{"dominant":"sideways"}'::jsonb, false, 'v1', '{}'::jsonb)
+     RETURNING id`,
+    [`SMOKE${Date.now()}`, '2026-06-01T00:00:00.000Z'],
+  );
+  const signalId = insert.rows?.[0]?.id;
+  const openOutcome = evaluateSignalOutcome(signal({ id: signalId }), [
+    bar(1, { high: 110, low: 95, close: 104 }),
+  ], { maxBars: 2, requireSignalId: true });
+  await upsertSignalOutcome(openOutcome, runFn);
+  const winOutcome = evaluateSignalOutcome(signal({ id: signalId }), [
+    bar(1, { high: 121, low: 95, close: 120 }),
+  ], { maxBars: 2, requireSignalId: true });
+  await upsertSignalOutcome(winOutcome, runFn);
+  assert.equal(outcomeRows.size, 1);
+  assert.equal(outcomeRows.get(String(signalId))?.outcome, 'win');
+  const transactional = { upsertOutcome: outcomeRows.get(String(signalId))?.outcome };
 
   const runtimeDry = await runLunaSignalOutcomeEval({
     dryRun: true,
@@ -173,27 +163,9 @@ async function main() {
   assert.equal(runtimeApply.written, 1);
   assert.equal(upsertCalls.length, 1);
 
-  let liveSample = null;
-  try {
-    const rows = await db.query(
-      `SELECT id, family, market, symbol, candle_ts, price, stop, target, rr, regime
-         FROM luna_strategy_signals
-        WHERE id = 35
-        LIMIT 1`,
-    );
-    if (rows?.[0]) {
-      liveSample = evaluateSignalOutcome(rows[0], [
-        { timestamp: new Date(Date.parse(rows[0].candle_ts) + 86_400_000).toISOString(), open: rows[0].price, high: rows[0].target, low: rows[0].price, close: rows[0].target, volume: 1 },
-      ], { maxBars: 20 });
-    }
-  } catch {
-    // The live fixture is optional; local smoke must still validate the same shape without DB dependence.
-  }
-  if (!liveSample) {
-    liveSample = evaluateSignalOutcome(signal({ id: 35, symbol: '005930', price: 322500, target: 370000, stop: 287500, rr: 1.357143 }), [
-      { timestamp: '2026-06-02T00:00:00.000Z', open: 322500, high: 370000, low: 320000, close: 370000, volume: 1 },
-    ], { maxBars: 20 });
-  }
+  const liveSample = evaluateSignalOutcome(signal({ id: 35, symbol: '005930', price: 322500, target: 370000, stop: 287500, rr: 1.357143 }), [
+    { timestamp: '2026-06-02T00:00:00.000Z', open: 322500, high: 370000, low: 320000, close: 370000, volume: 1 },
+  ], { maxBars: 20 });
   assert.equal(String(liveSample.signalId), '35');
   assert(['win', 'loss', 'expired', 'open'].includes(liveSample.outcome));
 

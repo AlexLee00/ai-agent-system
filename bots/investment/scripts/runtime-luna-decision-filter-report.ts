@@ -627,14 +627,14 @@ async function queryActiveCandidateUniverse({ market, limit, binanceTopVolumeUni
   return { symbols, candidateMeta };
 }
 
-export async function buildLunaDecisionFilterReport(options = {}) {
+export async function buildLunaDecisionFilterReport(options = {}, deps = {}) {
   const requestedMarket = options.market || null;
   const defaultExchange = requestedMarket === 'overseas' ? 'kis_overseas' : requestedMarket === 'domestic' ? 'kis' : 'binance';
   const exchange = options.exchange || defaultExchange;
   const market = requestedMarket || (exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : 'crypto');
   const hours = Math.max(1, Number(options.hours || DEFAULT_HOURS));
   const limit = Math.max(1, Number(options.limit || 12));
-  await db.initSchema();
+  await (deps.initSchema || db.initSchema)();
   const excludeOpenPositions = options.excludeOpenPositions !== false;
   const openPositionSymbols = excludeOpenPositions
     ? Array.isArray(options.openPositionSymbols)
@@ -642,7 +642,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
       : await loadOpenCandidateSymbols({ exchange, market })
     : new Set();
   const activeUniverse = options.activeCandidates
-    ? await queryActiveCandidateUniverse({ market, limit, binanceTopVolumeUniverse: options.binanceTopVolumeUniverse || null })
+    ? await (deps.queryActiveCandidateUniverse || queryActiveCandidateUniverse)({ market, limit, binanceTopVolumeUniverse: options.binanceTopVolumeUniverse || null })
     : { symbols: [], candidateMeta: {} };
   const rawCandidateSymbols = activeUniverse.symbols || [];
   const excludedOpenPositionSymbols = rawCandidateSymbols.filter((symbol) => openPositionSymbols.has(symbol));
@@ -651,7 +651,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     .map((symbol) => normalizeCandidateSymbol(symbol, market))
     .filter((symbol) => !openPositionSymbols.has(symbol));
   const maxOpenPositions = getLiveFireMaxOpenPositions();
-  const rows = await queryRecentAnalysis({
+  const rows = await (deps.queryRecentAnalysis || queryRecentAnalysis)({
     exchange,
     hours,
     symbols: candidateSymbols.length > 0 ? candidateSymbols : requestedSymbols,

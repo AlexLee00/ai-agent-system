@@ -11,10 +11,6 @@ import {
 } from '../services/meeting-room/config/meeting.config.ts';
 import { regenerateMeetingMinutesMarkdown } from '../services/meeting-room/server/minutes.ts';
 
-function hasFlag(name: string) {
-  return process.argv.includes(`--${name}`);
-}
-
 function argValueFromArgv(argv: string[], name: string, fallback: any = null) {
   const prefix = `--${name}=`;
   const inline = argv.find((arg) => arg.startsWith(prefix));
@@ -105,19 +101,25 @@ export async function runRuntimeLunaMeetingRoom(options: any = {}) {
   }, options.deps || {});
 }
 
-if (isDirectExecution(import.meta.url)) {
+export async function runRuntimeLunaMeetingRoomCli(options: any = {}) {
+  const argv = options.argv || process.argv;
+  const cliArgs = options.cliArgs || parseMeetingRoomCliArgs(argv);
+  const writeFn = options.writeStdout || writeStdout;
   await runCliMain({
-    run: () => runRuntimeLunaMeetingRoom(),
+    run: () => runRuntimeLunaMeetingRoom({ ...options, cliArgs }),
     onSuccess: async (result) => {
-      if (hasFlag('json')) await writeStdout(`${JSON.stringify(result, null, 2)}\n`);
-      else await writeStdout(`${summarizeMeetingRoomResult(result)}\n`);
+      if (argv.includes('--json')) await writeFn(`${JSON.stringify(result, null, 2)}\n`);
+      else await writeFn(`${summarizeMeetingRoomResult(result)}\n`);
     },
     errorPrefix: '❌ luna-meeting-room 실패:',
   });
 }
 
+if (isDirectExecution(import.meta.url)) await runRuntimeLunaMeetingRoomCli();
+
 export default {
   parseMeetingRoomCliArgs,
   runRuntimeLunaMeetingRoom,
+  runRuntimeLunaMeetingRoomCli,
   summarizeMeetingRoomResult,
 };

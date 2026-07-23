@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // @ts-nocheck
+// Canonical smoke: operations DB contact is forbidden; persistence uses an in-memory sink.
 
 import assert from 'assert/strict';
-import * as db from '../shared/db.ts';
 import {
   combineMarketGateSignals,
   computeAllMarketDeploymentGates,
@@ -15,7 +15,6 @@ import { runLunaMarketGate } from './runtime-luna-market-gate.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-const ROLLBACK_SENTINEL = 'luna_market_gate_smoke_rollback';
 const PARAMS = {
   ...LUNA_MARKET_GATE_DEFAULTS,
   fullThreshold: 70,
@@ -33,21 +32,6 @@ function fixtureSignals(scores: number[], weight = 1) {
     available: true,
     source: 'fixture',
   }));
-}
-
-async function withRollback(work: any) {
-  let output;
-  try {
-    await db.withTransaction(async (tx: any) => {
-      await ensureMarketGateHistorySchema(tx.run);
-      output = await work(tx);
-      throw new Error(ROLLBACK_SENTINEL);
-    });
-  } catch (error) {
-    if (error?.message !== ROLLBACK_SENTINEL) throw error;
-    return output;
-  }
-  throw new Error('luna_market_gate_smoke_expected_rollback');
 }
 
 async function main() {
@@ -113,43 +97,36 @@ async function main() {
   assert.equal(emptyOnchainSignal?.available, false);
   assert.equal(emptyOnchainSignal?.error, 'empty_onchain_summary');
 
-  const dbStamp = new Date(Date.now() + 60_000).toISOString();
-  const dbResult = await withRollback(async (tx: any) => {
-    const gates = (await computeAllMarketDeploymentGates({
-      params: PARAMS,
-      signalInputs: {
-        overseas: fixtureSignals([72, 74]),
-        domestic: fixtureSignals([50, 60]),
-        crypto: fixtureSignals([80, 78]),
-      },
-      usGate: { score: 73, deployment: 'full' },
-    })).map((gate) => ({ ...gate, computedAt: dbStamp }));
-    const result = await runLunaMarketGate({
-      gates,
-      regimes: [],
-      strategySignals: [],
-      preflightEvaluations: [],
-      circuitLocks: [],
-      writeOutput: false,
-    }, { runFn: tx.run, queryFn: tx.query });
-    const rowsInTx = await tx.query(
-      `SELECT COUNT(*)::int AS count
-         FROM luna_market_gate_history
-        WHERE computed_at = $1`,
-      [dbStamp],
-    );
-    assert.equal(Number(rowsInTx?.[0]?.count || 0), 3);
-    return result;
-  });
-  assert.equal(dbResult.inserted.length, 3);
-
-  const afterRollback = await db.query(
-    `SELECT COUNT(*)::int AS count
-       FROM luna_market_gate_history
-      WHERE computed_at = $1`,
-    [dbStamp],
-  ).catch(() => [{ count: 0 }]);
-  assert.equal(Number(afterRollback?.[0]?.count || 0), 0);
+  const historyRows = [];
+  const runFn = async (sql: string, params: any[] = []) => {
+    if (/INSERT INTO luna_market_gate_history/i.test(sql)) {
+      historyRows.push(params);
+      return { rowCount: 1, rows: [{ id: historyRows.length }] };
+    }
+    return { rowCount: 0, rows: [] };
+  };
+  await ensureMarketGateHistorySchema(runFn);
+  assert.equal(historyRows.length, 0);
+  const historyStamp = new Date(Date.now() + 60_000).toISOString();
+  const gates = (await computeAllMarketDeploymentGates({
+    params: PARAMS,
+    signalInputs: {
+      overseas: fixtureSignals([72, 74]),
+      domestic: fixtureSignals([50, 60]),
+      crypto: fixtureSignals([80, 78]),
+    },
+    usGate: { score: 73, deployment: 'full' },
+  })).map((gate) => ({ ...gate, computedAt: historyStamp }));
+  const persisted = await runLunaMarketGate({
+    gates,
+    regimes: [],
+    strategySignals: [],
+    preflightEvaluations: [],
+    circuitLocks: [],
+    writeOutput: false,
+  }, { runFn, queryFn: async () => [] });
+  assert.equal(historyRows.length, 3);
+  assert.equal(persisted.inserted.length, 3);
 
   const line = formatMarketGateDailyLine([
     { market: 'overseas', score: 78, deployment: 'full' },
@@ -173,7 +150,7 @@ async function main() {
       transitionLowersScore: lowUs.score < highUs.score,
       fetchFailureTolerated: failure.deployment,
       emptyOnchainUnavailable: true,
-      dbRollback: true,
+      inMemoryHistoryRows: historyRows.length,
       reportLine: line,
       registrySeed: true,
     },

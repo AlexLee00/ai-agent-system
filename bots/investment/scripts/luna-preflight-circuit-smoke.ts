@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // @ts-nocheck
+// Canonical smoke: operations DB contact is forbidden; persistence uses an in-memory sink.
 
 import assert from 'assert/strict';
-import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runLunaMarketGate } from './runtime-luna-market-gate.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
@@ -20,8 +20,6 @@ import {
   evaluateStrategyFamiliesForSymbol,
   dropIncompleteLastBar,
 } from '../shared/luna-strategy-families.ts';
-
-const ROLLBACK_SENTINEL = 'luna_preflight_circuit_smoke_rollback';
 
 function dayIso(base: string, offset: number) {
   return new Date(Date.parse(base) + offset * 86_400_000).toISOString();
@@ -94,22 +92,6 @@ function trade(overrides: any = {}) {
     pnl_net: overrides.pnlNet ?? -5,
     exit_time: exitTime,
   };
-}
-
-async function withRollback(work: any) {
-  let output;
-  try {
-    await db.withTransaction(async (tx: any) => {
-      for (const statement of LUNA_ENTRY_PREFLIGHT_SCHEMA_SQL) await tx.run(statement);
-      for (const statement of LUNA_CIRCUIT_SCHEMA_SQL) await tx.run(statement);
-      output = await work(tx);
-      throw new Error(ROLLBACK_SENTINEL);
-    });
-  } catch (error) {
-    if (error?.message !== ROLLBACK_SENTINEL) throw error;
-    return output;
-  }
-  throw new Error('luna_preflight_circuit_smoke_expected_rollback');
 }
 
 function gateByName(result: any, name: string) {
@@ -312,60 +294,76 @@ async function circuitScenarios() {
   };
 }
 
-async function dbRollbackScenario(preflightResult: any, lock: any) {
+async function inMemoryPersistenceScenario(preflightResult: any, lock: any) {
   const stamp = new Date(Date.now() + 240_000).toISOString();
   const activeLock = {
     ...lock,
     lockUntil: new Date(Date.parse(stamp) + 60 * 60_000).toISOString(),
   };
-  const txResult = await withRollback(async (tx: any) => {
-    const preflightRows = await insertEntryPreflightLogs([{ ...preflightResult, evaluatedAt: stamp }], tx.run);
-    const lockRows = await insertCircuitLocks([{ ...activeLock, evaluatedAt: stamp }], tx.run);
-    const duplicateRows = await insertCircuitLocks([{ ...activeLock, evaluatedAt: stamp }], tx.run, {
-      skipActiveDuplicates: true,
-      queryFn: tx.query,
-      now: stamp,
-    });
-    const newSymbolRows = await insertCircuitLocks([{
-      ...activeLock,
-      symbol: `${activeLock.symbol || 'BTC/USDT'}-SMOKE`,
-      evaluatedAt: stamp,
-    }], tx.run, {
-      skipActiveDuplicates: true,
-      queryFn: tx.query,
-      now: stamp,
-    });
-    const preflightCount = await tx.query(
-      `SELECT COUNT(*)::int AS count FROM luna_entry_preflight_log WHERE evaluated_at = $1`,
-      [stamp],
-    );
-    const circuitCount = await tx.query(
-      `SELECT COUNT(*)::int AS count FROM luna_circuit_locks WHERE evaluated_at = $1`,
-      [stamp],
-    );
-    assert.equal(Number(preflightCount?.[0]?.count || 0), 1);
-    assert.equal(Number(circuitCount?.[0]?.count || 0), 2);
-    assert.equal(lockRows.filter(Boolean).length, 1);
-    assert.equal(duplicateRows.filter(Boolean).length, 0);
-    assert.equal(duplicateRows.skippedDuplicates, 1);
-    assert.equal(newSymbolRows.filter(Boolean).length, 1);
-    return { preflightRows, lockRows, duplicateRows, newSymbolRows };
+  const preflightStore = [];
+  const circuitStore = [];
+  const runFn = async (sql: string, params: any[] = []) => {
+    if (/INSERT INTO luna_entry_preflight_log/i.test(sql)) {
+      const id = preflightStore.length + 1;
+      preflightStore.push({ id, params });
+      return { rowCount: 1, rows: [{ id }] };
+    }
+    if (/INSERT INTO luna_circuit_locks/i.test(sql)) {
+      const id = circuitStore.length + 1;
+      circuitStore.push({
+        id,
+        market: params[0],
+        symbol: params[1],
+        side: params[2],
+        level: params[3],
+        circuit: params[4],
+        locked: params[5],
+        reason: params[6],
+        lockUntil: params[8],
+      });
+      return { rowCount: 1, rows: [{ id }] };
+    }
+    return { rowCount: 0, rows: [] };
+  };
+  const queryFn = async (sql: string, params: any[] = []) => {
+    assert.match(sql, /FROM luna_circuit_locks/i);
+    const evaluatedAt = Date.parse(params[6]);
+    return circuitStore.filter((row) => row.market === params[0]
+      && row.symbol === params[1]
+      && row.side === params[2]
+      && row.level === params[3]
+      && row.circuit === params[4]
+      && row.reason === params[5]
+      && row.locked === true
+      && (!row.lockUntil || Date.parse(row.lockUntil) > evaluatedAt));
+  };
+  for (const statement of LUNA_ENTRY_PREFLIGHT_SCHEMA_SQL) await runFn(statement);
+  for (const statement of LUNA_CIRCUIT_SCHEMA_SQL) await runFn(statement);
+  assert.equal(preflightStore.length + circuitStore.length, 0);
+  const preflightRows = await insertEntryPreflightLogs([{ ...preflightResult, evaluatedAt: stamp }], runFn);
+  const lockRows = await insertCircuitLocks([{ ...activeLock, evaluatedAt: stamp }], runFn);
+  const duplicateRows = await insertCircuitLocks([{ ...activeLock, evaluatedAt: stamp }], runFn, {
+    skipActiveDuplicates: true,
+    queryFn,
+    now: stamp,
   });
-  assert.equal(txResult.preflightRows.length, 1);
-  assert.equal(txResult.lockRows.length, 1);
-  assert.equal(txResult.duplicateRows.skippedDuplicates, 1);
-  assert.equal(txResult.newSymbolRows.filter(Boolean).length, 1);
-  const afterPreflight = await db.query(
-    `SELECT COUNT(*)::int AS count FROM luna_entry_preflight_log WHERE evaluated_at = $1`,
-    [stamp],
-  ).catch(() => [{ count: 0 }]);
-  const afterCircuit = await db.query(
-    `SELECT COUNT(*)::int AS count FROM luna_circuit_locks WHERE evaluated_at = $1`,
-    [stamp],
-  ).catch(() => [{ count: 0 }]);
-  assert.equal(Number(afterPreflight?.[0]?.count || 0), 0);
-  assert.equal(Number(afterCircuit?.[0]?.count || 0), 0);
-  return true;
+  const newSymbolRows = await insertCircuitLocks([{
+    ...activeLock,
+    symbol: `${activeLock.symbol || 'BTC/USDT'}-SMOKE`,
+    evaluatedAt: stamp,
+  }], runFn, {
+    skipActiveDuplicates: true,
+    queryFn,
+    now: stamp,
+  });
+  assert.equal(preflightStore.length, 1);
+  assert.equal(circuitStore.length, 2);
+  assert.equal(preflightRows.length, 1);
+  assert.equal(lockRows.filter(Boolean).length, 1);
+  assert.equal(duplicateRows.filter(Boolean).length, 0);
+  assert.equal(duplicateRows.skippedDuplicates, 1);
+  assert.equal(newSymbolRows.filter(Boolean).length, 1);
+  return { preflightRows: preflightStore.length, circuitRows: circuitStore.length, skippedDuplicates: duplicateRows.skippedDuplicates };
 }
 
 async function runnerIndependenceScenario() {
@@ -409,7 +407,7 @@ async function main() {
     },
     trades: Array.from({ length: 4 }, (_, idx) => trade({ id: `db-${idx}`, exitTime: Date.parse('2026-06-11T12:00:00Z') - idx * 60_000 })),
   })).locks[0];
-  const dbRollback = await dbRollbackScenario(preflightForDb, circuitForDb);
+  const inMemoryPersistence = await inMemoryPersistenceScenario(preflightForDb, circuitForDb);
   const runnerIndependentFailure = await runnerIndependenceScenario();
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
   assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 31);
@@ -424,7 +422,7 @@ async function main() {
       strategy,
       preflight,
       circuit,
-      dbRollback,
+      inMemoryPersistence,
       runnerIndependentFailure,
       registrySeedCount: seedDryRun.seeded,
       circuitDuplicateSuppression: true,

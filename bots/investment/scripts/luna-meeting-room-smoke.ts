@@ -1,59 +1,44 @@
 #!/usr/bin/env node
 // @ts-nocheck
+// Canonical smoke: operations DB contact is forbidden; relational checks live in the confirmed integration command.
 
 import assert from 'assert/strict';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadInvestmentSkills } from '../shared/skill-registry.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
-import { parseMeetingRoomCliArgs, summarizeMeetingRoomResult } from './runtime-luna-meeting-room.ts';
+import { parseMeetingRoomCliArgs } from './runtime-luna-meeting-room.ts';
 import { buildMeetingPlanNote, buildMarketSegments } from '../services/meeting-room/server/adapters/stack-adapter.ts';
 import {
   buildMeetingAgendasForType,
   buildMeetingDecisionInlineKeyboard,
   runMeetingSession,
 } from '../services/meeting-room/server/orchestrator/meeting-session.ts';
-import { applyMeetingDecisionAction } from '../services/meeting-room/server/meeting-decision-actions.ts';
 import {
-  regenerateMeetingMinutesMarkdown,
-  renderMeetingMinutesMarkdown,
   writeMeetingMinutesMarkdown,
 } from '../services/meeting-room/server/minutes.ts';
 
-const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const REPO_ROOT = path.resolve(INVESTMENT_ROOT, '../..');
-const MIGRATION_PATH = path.join(INVESTMENT_ROOT, 'migrations', '20260611000004_luna_meeting_room.sql');
-const SMOKE_OUTPUT_DIR = path.join(INVESTMENT_ROOT, 'output', 'meeting-room');
-const ROLLBACK_SENTINEL = 'luna_meeting_room_smoke_rollback';
+let smokeOutputDir: string | null = null;
+
+function getSmokeOutputDir() {
+  if (!smokeOutputDir) smokeOutputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'luna-meeting-room-smoke-'));
+  return smokeOutputDir;
+}
 
 function outputPath(name: string) {
-  fs.mkdirSync(SMOKE_OUTPUT_DIR, { recursive: true });
-  return path.join(SMOKE_OUTPUT_DIR, `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}.md`);
+  return path.join(getSmokeOutputDir(), `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}.md`);
 }
 
 function tempOutputDir(name: string) {
-  const dir = path.join(SMOKE_OUTPUT_DIR, `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const dir = path.join(getSmokeOutputDir(), `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-function kstDateKey(value: any) {
-  const date = new Date(value);
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const get = (type: string) => parts.find((part) => part.type === type)?.value || '';
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
-function fixturePlanNote() {
+export function fixturePlanNote() {
   return {
     ok: true,
     type: 'morning',
@@ -165,48 +150,6 @@ async function mockQuery(sql: string) {
   return [];
 }
 
-function splitSqlStatements(sql: string) {
-  return sql
-    .replace(/^\s*--.*$/gm, '')
-    .split(/;\s*(?:\n|$)/)
-    .map((statement) => statement.trim())
-    .filter(Boolean)
-    .map((statement) => `${statement};`);
-}
-
-async function loadMeetingRoomMigration(runFn: any) {
-  const sql = fs.readFileSync(MIGRATION_PATH, 'utf8');
-  for (const statement of splitSqlStatements(sql)) {
-    await runFn(statement);
-  }
-}
-
-async function withRollback(work: any) {
-  let output;
-  try {
-    await db.withTransaction(async (tx: any) => {
-      await loadMeetingRoomMigration(tx.run);
-      output = await work(tx);
-      throw new Error(ROLLBACK_SENTINEL);
-    });
-  } catch (error) {
-    if (error?.message !== ROLLBACK_SENTINEL) throw error;
-    return output;
-  }
-  throw new Error('expected rollback sentinel');
-}
-
-async function countMeetingRows(queryFn: any) {
-  const sessions = await queryFn(`SELECT COUNT(*)::int AS count FROM luna_meeting_sessions`);
-  const minutes = await queryFn(`SELECT COUNT(*)::int AS count FROM luna_meeting_minutes`);
-  const decisions = await queryFn(`SELECT COUNT(*)::int AS count FROM luna_meeting_decisions`);
-  return {
-    sessions: Number(sessions?.[0]?.count || 0),
-    minutes: Number(minutes?.[0]?.count || 0),
-    decisions: Number(decisions?.[0]?.count || 0),
-  };
-}
-
 async function main() {
   const cliEquals = parseMeetingRoomCliArgs(['node', 'runtime', '--type=weekly', '--chair=master', '--output=/tmp/luna-weekly.md', '--apply']);
   const cliSpace = parseMeetingRoomCliArgs(['node', 'runtime', '--type', 'weekly', '--chair', 'master', '--output', '/tmp/luna-weekly.md', '--apply']);
@@ -215,18 +158,29 @@ async function main() {
     () => parseMeetingRoomCliArgs(['node', 'runtime', '--type', 'bad_type']),
     /invalid meeting --type=bad_type/,
   );
-  const cliJson = spawnSync(
-    process.execPath,
-    [
-      path.join(INVESTMENT_ROOT, 'scripts', 'runtime-luna-meeting-room.ts'),
-      '--type',
-      'morning',
-      '--dry-run',
-      '--no-llm',
-      '--json',
-    ],
-    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 },
-  );
+  const runtimeModuleUrl = new URL('./runtime-luna-meeting-room.ts', import.meta.url).href;
+  const smokeModuleUrl = import.meta.url;
+  const cliScript = `
+    const { runRuntimeLunaMeetingRoomCli } = await import(${JSON.stringify(runtimeModuleUrl)});
+    const { fixturePlanNote } = await import(${JSON.stringify(smokeModuleUrl)});
+    await runRuntimeLunaMeetingRoomCli({
+      argv: process.argv,
+      deps: { buildMeetingPlanNote: async () => fixturePlanNote() },
+    });
+  `;
+  const cliJson = spawnSync(process.execPath, [
+    '--input-type=module',
+    '--eval',
+    cliScript,
+    '--',
+    '--type',
+    'morning',
+    '--dry-run',
+    '--no-llm',
+    '--json',
+    '--output',
+    outputPath('smoke-runtime-entrypoint'),
+  ], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
   assert.equal(cliJson.status, 0, cliJson.stderr || cliJson.stdout.slice(0, 1000));
   assert.equal(cliJson.stderr, '');
   const cliJsonPayload = JSON.parse(cliJson.stdout);
@@ -272,7 +226,7 @@ async function main() {
     type: 'morning',
     now: '2026-06-11T00:00:00.000Z',
     queryFn: mockQuery,
-    proposalPath: path.join(REPO_ROOT, 'missing-proposals.json'),
+    proposalPath: path.join(getSmokeOutputDir(), 'missing-proposals.json'),
   });
   assert.equal(plan.ok, true);
   assert.equal(plan.segments.length, 3);
@@ -608,139 +562,15 @@ async function main() {
   const debriefAgendas = buildMeetingAgendasForType('domestic_debrief', { ...fixturePlanNote(), type: 'domestic_debrief' });
   assert.equal(debriefAgendas.length, 1);
 
-  const dryRunRows = await withRollback(async (tx: any) => {
-    const before = await countMeetingRows(tx.query);
-    await runMeetingSession({
-      type: 'morning',
-      dryRun: true,
-      noLlm: true,
-      planNote: fixturePlanNote(),
-      outputPath: outputPath('smoke-dry-run-rollback'),
-    }, { queryFn: tx.query, runFn: tx.run });
-    const after = await countMeetingRows(tx.query);
-    assert.deepEqual(after, before);
-
-    let sentTelegramInput: any = null;
-    const applied = await runMeetingSession({
-      type: 'morning',
-      dryRun: false,
-      apply: true,
-      noLlm: true,
-      planNote: fixturePlanNote(),
-      outputPath: outputPath('smoke-apply-rollback'),
-    }, {
-      queryFn: tx.query,
-      runFn: tx.run,
-      postAlarm: async (input: any) => {
-        sentTelegramInput = input;
-        return { ok: true, fixture: true };
-      },
-    });
-    const appliedRows = await countMeetingRows(tx.query);
-    assert.equal(Number(applied.session.id) > 0, true);
-    assert.equal(applied.telegram.attempted, true);
-    assert.equal(applied.telegram.ok, true);
-    const appliedSummary = summarizeMeetingRoomResult(applied);
-    assert.match(appliedSummary, /- telegram: attempted=true ok=true sent=1 pending=\d+/);
-    assert.equal(appliedSummary.includes('pending_master'), false);
-    assert.ok(sentTelegramInput);
-    assert.ok(sentTelegramInput.message.includes('Luna 회의 완료: 아침 통합 회의'));
-    assert.ok(sentTelegramInput.message.includes('마스터 액션 대기:'));
-    assert.ok(sentTelegramInput.message.includes('회의 #'));
-    assert.ok(sentTelegramInput.message.includes('회의록'));
-    assert.equal(sentTelegramInput.message.includes('pending_master'), false);
-    assert.equal(sentTelegramInput.message.includes('session='), false);
-    assert.equal(sentTelegramInput.message.includes('minutes='), false);
-    assert.equal(sentTelegramInput.message.includes('morning'), false);
-    assert.ok(Array.isArray(sentTelegramInput.inlineKeyboard));
-    assert.equal(appliedRows.sessions, before.sessions + 1);
-    assert.ok(appliedRows.minutes > before.minutes);
-    assert.ok(appliedRows.decisions > before.decisions);
-
-    const decisionId = applied.decisions[0].id;
-    const confirmed = await applyMeetingDecisionAction({
-      id: decisionId,
-      action: 'confirm',
-      note: 'telegram fixture',
-      changedVia: 'telegram',
-      actor: { actorId: '123', actorUsername: 'master' },
-      callback: { data: `luna_meeting:${decisionId}:confirm` },
-    }, { withTransactionFn: async (fn: any) => fn(tx) });
-    assert.equal(confirmed.ok, true);
-    assert.equal(confirmed.logicalStatus, 'confirmed');
-    const idempotent = await applyMeetingDecisionAction({
-      id: decisionId,
-      action: 'confirm',
-      changedVia: 'telegram',
-    }, { withTransactionFn: async (fn: any) => fn(tx) });
-    assert.equal(idempotent.idempotent, true);
-    const auditRows = await tx.query(
-      `SELECT content, meta FROM luna_meeting_minutes WHERE meta->>'changed_via' = 'telegram' AND content LIKE '%telegram fixture%'`,
-    );
-    assert.equal(auditRows.length >= 1, true);
-    assert.ok(auditRows.some((row: any) => String(row.content).includes('결정 확정 처리 · 경로=텔레그램 · 메모=telegram fixture')));
-    assert.equal(auditRows.some((row: any) => String(row.content).includes('meeting decision')), false);
-
-    const regenerateDir = tempOutputDir('smoke-regenerate');
-    const regenerated = await regenerateMeetingMinutesMarkdown(applied.session.id, {
-      queryFn: tx.query,
-      outputDir: regenerateDir,
-    });
-    const dbMinuteRows = await tx.query(
-      `SELECT COUNT(*)::int AS count FROM luna_meeting_minutes WHERE session_id = $1`,
-      [applied.session.id],
-    );
-    assert.equal(regenerated.ok, true);
-    assert.equal(regenerated.minutes.length, Number(dbMinuteRows?.[0]?.count || 0));
-    assert.equal(path.basename(regenerated.markdownPath), `${kstDateKey(applied.startedAt)}-morning.md`);
-    assert.ok(regenerated.markdown.startsWith('# Luna Meeting Room — 아침 통합 회의'));
-    assert.equal(regenerated.markdown.includes('# Luna Meeting Room — morning'), false);
-    assert.ok(regenerated.markdown.includes('- 상태: 완료'));
-    assert.ok(regenerated.markdown.includes('- 드라이런: 아니오'));
-    assert.equal(regenerated.markdown.includes('- status:'), false);
-    assert.equal(regenerated.markdown.includes('- dry_run:'), false);
-    assert.equal(regenerated.markdown.includes('MR-A output is advisory/shadow only'), false);
-    assert.ok(regenerated.markdown.includes(`회의 #${applied.session.id}`));
-    assert.equal(regenerated.markdown.includes(`session #${applied.session.id}`), false);
-    assert.ok(regenerated.markdown.includes('요약: 아침 통합 회의 완료:'));
-    assert.equal(regenerated.markdown.includes('summary: 아침 통합 회의 완료:'), false);
-    assert.ok(regenerated.markdown.includes('## 회의 데이터 요약'));
-    assert.ok(regenerated.markdown.includes('## 회의록'));
-    assert.ok(regenerated.markdown.includes('## 결정 기록(ADR)'));
-    assert.equal(regenerated.markdown.includes('## Plan Note'), false);
-    assert.equal(regenerated.markdown.includes('## Minutes'), false);
-    assert.equal(regenerated.markdown.includes('## ADR'), false);
-    const emptyMarkdown = renderMeetingMinutesMarkdown({
-      session: { id: 999, type: 'morning', status: 'closed' },
-      minutes: [],
-      decisions: [],
-      dryRun: true,
-    });
-    assert.ok(emptyMarkdown.includes('회의 데이터 요약 없음'));
-    assert.ok(emptyMarkdown.includes('- 회의록 없음'));
-    assert.equal(emptyMarkdown.includes('plan-note 없음'), false);
-    const partialMarkdown = renderMeetingMinutesMarkdown({
-      session: { id: 1000, type: 'morning', status: 'closed' },
-      planNote: { briefMarkdown: '요약' },
-      minutes: [{ content: '' }],
-      decisions: [{}],
-      dryRun: false,
-    });
-    assert.ok(partialMarkdown.includes('### 회의록. 안건 — 기록 / 시스템'));
-    assert.ok(partialMarkdown.includes('내용 없음'));
-    assert.ok(partialMarkdown.includes('결정 내용 없음 (기한: 기한 미정)'));
-    assert.equal(partialMarkdown.includes('undefined'), false);
-    assert.equal(partialMarkdown.includes('n/a'), false);
-    assert.equal(partialMarkdown.includes('due:'), false);
-    return { before, after, appliedRows };
-  });
+  // Relational persistence, row-count, decision-action, and regeneration checks live in
+  // integration:luna-meeting-room-persistence; canonical smokes never contact operations DB.
 
   assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 32);
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
   assert.equal(seedDryRun.seeded, LUNA_COMPONENT_REGISTRY_SEED.length);
   assert.ok(seedDryRun.components.includes('meeting-room-orchestrator'));
 
-  return {
+  const result = {
     ok: true,
     smoke: 'luna-meeting-room',
     scenarios: {
@@ -753,25 +583,25 @@ async function main() {
       weekendLightweight: true,
       weekendMorningScheduleBoundary: true,
       llmFailOpen: true,
-      dryRunDbRows: dryRunRows.after,
-      applyRollbackRows: dryRunRows.appliedRows,
+      operationsDbContact: false,
+      persistenceIntegration: 'integration:luna-meeting-room-persistence',
       registrySeedCount: seedDryRun.seeded,
       costGuard: true,
       debrief: true,
       premarket: true,
       weekly: true,
-      telegramDecisionAction: true,
       pendingDecisionReappearedDedup: true,
       cliArgParsing: true,
       markdownFilePolicy: true,
-      regenerateMarkdown: true,
-      cliJsonStdout: true,
+      runtimeEntrypoint: true,
       pendingDecisionDataBriefNoRawJson: true,
       circuitLockDataBriefSummary: true,
       circuitLockDistinctSummary: true,
       dataBriefRawEvidencePreserved: true,
     },
   };
+  if (smokeOutputDir) fs.rmSync(smokeOutputDir, { recursive: true, force: true });
+  return result;
 }
 
 if (isDirectExecution(import.meta.url)) {

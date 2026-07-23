@@ -124,6 +124,7 @@
     "smoke:luna-universe-snapshot": "node scripts/luna-universe-snapshot-smoke.ts --json",
     "smoke:luna-signal-outcome": "node scripts/luna-signal-outcome-smoke.ts --json",
     "smoke:luna-meeting-room": "node scripts/luna-meeting-room-smoke.ts --json",
+    "integration:luna-meeting-room-persistence": "node scripts/luna-meeting-room-persistence-integration.ts",
     "smoke:luna-meeting-room-l": "node scripts/luna-meeting-room-l-smoke.ts --json",
     "smoke:luna-expected-fire-watchdog": "node scripts/luna-expected-fire-watchdog-smoke.ts --json",
     "smoke:luna-meeting-room-web": "node scripts/luna-meeting-room-web-smoke.ts --json",

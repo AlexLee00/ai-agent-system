@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // @ts-nocheck
+// Canonical smoke: operations DB contact is forbidden; persistence uses an in-memory sink.
 
 import assert from 'assert/strict';
-import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runLunaMarketGate } from './runtime-luna-market-gate.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
@@ -15,8 +15,6 @@ import {
   insertStrategyFamilySignals,
   summarizeStrategyFamilySignals,
 } from '../shared/luna-strategy-families.ts';
-
-const ROLLBACK_SENTINEL = 'luna_strategy_families_smoke_rollback';
 
 function bar(day: number, close: number, extra: any = {}) {
   return {
@@ -52,21 +50,6 @@ function testahEntryBars({ lowStop = 131, swingHigh = 170, entryClose = 146 } = 
 
 function testahTrendBars(count = 82) {
   return Array.from({ length: count }, (_, idx) => bar(idx, 100 + idx * 0.45));
-}
-
-async function withRollback(work: any) {
-  let output;
-  try {
-    await db.withTransaction(async (tx: any) => {
-      await ensureStrategySignalsSchema(tx.run);
-      output = await work(tx);
-      throw new Error(ROLLBACK_SENTINEL);
-    });
-  } catch (error) {
-    if (error?.message !== ROLLBACK_SENTINEL) throw error;
-    return output;
-  }
-  throw new Error('luna_strategy_families_smoke_expected_rollback');
 }
 
 async function main() {
@@ -147,27 +130,27 @@ async function main() {
   });
   assert.equal(familyResults.some((item) => item.signalType === 'entry' && item.family === 'turtle_breakout'), true);
 
-  const dbStamp = new Date(Date.now() + 180_000).toISOString();
-  const dbResult = await withRollback(async (tx: any) => {
-    const duplicateSignal = {
-      ...regimeAttached,
-      market: 'overseas',
-      symbol: 'AAPL',
-      candleTs: dbStamp,
-      signalType: 'entry',
-    };
-    await insertStrategyFamilySignals([duplicateSignal, duplicateSignal], tx.run);
-    const rows = await tx.query(
-      `SELECT COUNT(*)::int AS count
-         FROM luna_strategy_signals
-        WHERE symbol = 'AAPL'
-          AND candle_ts = $1`,
-      [dbStamp],
-    );
-    assert.equal(Number(rows?.[0]?.count || 0), 1);
-    return { count: Number(rows?.[0]?.count || 0) };
-  });
-  assert.equal(dbResult.count, 1);
+  const signalRows = new Map();
+  const runFn = async (sql: string, params: any[] = []) => {
+    if (!/INSERT INTO luna_strategy_signals/i.test(sql)) return { rowCount: 0, rows: [] };
+    const key = [params[0], params[1], params[2], params[3], String(params[4])].join('\u0001');
+    if (signalRows.has(key)) return { rowCount: 0, rows: [] };
+    const id = signalRows.size + 1;
+    signalRows.set(key, { id, params });
+    return { rowCount: 1, rows: [{ id }] };
+  };
+  await ensureStrategySignalsSchema(runFn);
+  const signalStamp = new Date(Date.now() + 180_000).toISOString();
+  const duplicateSignal = {
+    ...regimeAttached,
+    market: 'overseas',
+    symbol: 'AAPL',
+    candleTs: signalStamp,
+    signalType: 'entry',
+  };
+  const insertedSignals = await insertStrategyFamilySignals([duplicateSignal, duplicateSignal], runFn);
+  assert.equal(signalRows.size, 1);
+  assert.equal(insertedSignals.filter(Boolean).length, 1);
 
   const gateFailure = await runLunaMarketGate({ dryRun: true, writeOutput: false }, {
     computeAllMarketDeploymentGates: async () => [{ market: 'crypto', score: 70, deployment: 'full' }],
@@ -208,7 +191,7 @@ async function main() {
       testahNoPullback: noPullback.reason,
       badRr: badRr.reason,
       regimeMatched: regimeAttached.matched,
-      dbRollback: true,
+      inMemorySignalRows: signalRows.size,
       runnerIndependentFailure: gateFailure.strategyError,
       registrySeedCount: seedDryRun.seeded,
     },

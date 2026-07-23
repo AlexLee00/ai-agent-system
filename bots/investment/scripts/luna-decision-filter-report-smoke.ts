@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // @ts-nocheck
+// Canonical smoke: operations DB contact is forbidden; report readers are injected fixtures.
 
 import assert from 'node:assert/strict';
-import * as db from '../shared/db.ts';
-import { ensureCandidateUniverseTable } from '../team/discovery/discovery-store.ts';
 import {
   buildNearMissWatchCandidate,
   buildDecisionFilterDiagnostics,
@@ -349,95 +348,52 @@ export async function runLunaDecisionFilterReportSmoke() {
     ],
     excluded: {},
   };
-  await db.initSchema();
-  await ensureCandidateUniverseTable();
-  try {
-    await db.run(
-      `INSERT INTO candidate_universe
-         (symbol, market, source, source_tier, score, confidence, reason, reason_code, ttl_hours, raw_data, expires_at)
-       VALUES
-         ($1, 'crypto', 'binance_market_momentum', 1, 0.91, 0.88, 'decision filter smoke', 'decision_filter_smoke', 2, '{}'::jsonb, now() + interval '2 hours')
-       ON CONFLICT (symbol, market, source) DO UPDATE SET
-         score = excluded.score,
-         confidence = excluded.confidence,
-         discovered_at = now(),
-         expires_at = now() + interval '2 hours'`,
-      [fixtureSymbol],
-    );
-    await db.run(
-      `INSERT INTO candidate_universe
-         (symbol, market, source, source_tier, score, confidence, reason, reason_code, ttl_hours, raw_data, expires_at)
-       VALUES
-         ($1, 'crypto', 'binance_market_momentum', 1, 0.93, 0.90, 'decision filter open smoke', 'decision_filter_open_smoke', 2, '{}'::jsonb, now() + interval '2 hours')
-       ON CONFLICT (symbol, market, source) DO UPDATE SET
-         score = excluded.score,
-         confidence = excluded.confidence,
-         discovered_at = now(),
-         expires_at = now() + interval '2 hours'`,
-      [openFixtureSymbol],
-    );
-    await db.run(
-      `INSERT INTO candidate_universe
-         (symbol, market, source, source_tier, score, confidence, reason, reason_code, ttl_hours, raw_data, expires_at)
-       VALUES
-         ($1, 'crypto', 'binance_market_momentum', 1, 0.89, 0.82, 'decision filter missing analysis smoke', 'decision_filter_missing_analysis_smoke', 2, '{}'::jsonb, now() + interval '2 hours')
-       ON CONFLICT (symbol, market, source) DO UPDATE SET
-         score = excluded.score,
-         confidence = excluded.confidence,
-         discovered_at = now(),
-         expires_at = now() + interval '2 hours'`,
-      [missingAnalysisFixtureSymbol],
-    );
-    await db.insertAnalysis({
-      symbol: fixtureSymbol,
-      analyst: 'ta_mtf',
-      signal: 'BUY',
-      confidence: 0.81,
-      reasoning: 'decision filter smoke technical',
-      metadata: { smoke: true },
-      exchange: 'binance',
-    });
-    await db.insertAnalysis({
-      symbol: openFixtureSymbol,
-      analyst: 'ta_mtf',
-      signal: 'BUY',
-      confidence: 0.91,
-      reasoning: 'decision filter open position smoke',
-      metadata: { smoke: true },
-      exchange: 'binance',
-    });
-    const activeReport = await buildLunaDecisionFilterReport({
-      exchange: 'binance',
-      market: 'crypto',
-      activeCandidates: true,
-      openPositionSymbols: [openFixtureSymbol],
-      hours: 1,
-      limit: 20,
-      binanceTopVolumeUniverse: smokeBinanceTopVolumeUniverse,
-    });
-    assert.equal(activeReport.symbolScope, 'active_candidates');
-    assert.ok(activeReport.activeCandidateSymbols.includes(fixtureSymbol));
-    assert.equal(activeReport.activeCandidateSymbols.includes(openFixtureSymbol), false);
-    assert.ok(activeReport.excludedOpenPositionSymbols.includes(openFixtureSymbol));
-    assert.ok(activeReport.activeCandidateSymbols.length <= 20);
-    assert.ok(Array.isArray(activeReport.nearMissWatchlist));
-    assert.equal(activeReport.bottlenecks.includes('active_candidate_analysis_missing'), true);
-    assert.ok(Number(activeReport.activeCandidateCoverage?.missing || 0) >= 1);
+  const candidateMeta = Object.fromEntries(smokeBinanceTopVolumeUniverse.symbols.map((symbol, index) => [symbol, {
+    rank: index + 1,
+    score: 0.91 - index * 0.01,
+    confidence: 0.88 - index * 0.01,
+    source: 'binance_market_momentum',
+    reasonCode: 'decision_filter_smoke',
+    discoveredAt: now,
+  }]));
+  const fixtureAnalysis = [
+    row(fixtureSymbol, 'ta_mtf', 'BUY', 0.81),
+    row(openFixtureSymbol, 'ta_mtf', 'BUY', 0.91),
+  ].map((item) => ({ ...item, exchange: 'binance', metadata: { smoke: true } }));
+  const reportDeps = {
+    initSchema: async () => undefined,
+    queryActiveCandidateUniverse: async () => ({ symbols: smokeBinanceTopVolumeUniverse.symbols, candidateMeta }),
+    queryRecentAnalysis: async ({ symbols = [] } = {}) => fixtureAnalysis.filter((item) => symbols.length === 0 || symbols.includes(item.symbol)),
+  };
+  const activeReport = await buildLunaDecisionFilterReport({
+    exchange: 'binance',
+    market: 'crypto',
+    activeCandidates: true,
+    openPositionSymbols: [openFixtureSymbol],
+    hours: 1,
+    limit: 20,
+    binanceTopVolumeUniverse: smokeBinanceTopVolumeUniverse,
+  }, reportDeps);
+  assert.equal(activeReport.symbolScope, 'active_candidates');
+  assert.ok(activeReport.activeCandidateSymbols.includes(fixtureSymbol));
+  assert.equal(activeReport.activeCandidateSymbols.includes(openFixtureSymbol), false);
+  assert.ok(activeReport.excludedOpenPositionSymbols.includes(openFixtureSymbol));
+  assert.ok(activeReport.activeCandidateSymbols.length <= 20);
+  assert.ok(Array.isArray(activeReport.nearMissWatchlist));
+  assert.equal(activeReport.bottlenecks.includes('active_candidate_analysis_missing'), true);
+  assert.ok(Number(activeReport.activeCandidateCoverage?.missing || 0) >= 1);
 
-    const overseasReport = await buildLunaDecisionFilterReport({
-      market: 'overseas',
-      symbols: ['NVDA'],
-      hours: 1,
-      limit: 1,
-    });
-    assert.equal(overseasReport.exchange, 'kis_overseas');
-  } finally {
-    await db.run(`DELETE FROM analysis WHERE symbol = $1 AND metadata->>'smoke' = 'true'`, [fixtureSymbol]).catch(() => null);
-    await db.run(`DELETE FROM analysis WHERE symbol = $1 AND metadata->>'smoke' = 'true'`, [openFixtureSymbol]).catch(() => null);
-    await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [fixtureSymbol]).catch(() => null);
-    await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [openFixtureSymbol]).catch(() => null);
-    await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [missingAnalysisFixtureSymbol]).catch(() => null);
-  }
+  const overseasReport = await buildLunaDecisionFilterReport({
+    market: 'overseas',
+    symbols: ['NVDA'],
+    openPositionSymbols: [],
+    hours: 1,
+    limit: 1,
+  }, {
+    initSchema: async () => undefined,
+    queryRecentAnalysis: async () => [],
+  });
+  assert.equal(overseasReport.exchange, 'kis_overseas');
 
   return {
     ok: true,

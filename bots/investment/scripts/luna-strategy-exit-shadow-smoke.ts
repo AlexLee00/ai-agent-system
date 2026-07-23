@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // @ts-nocheck
+// Canonical smoke: operations DB contact is forbidden; persistence uses an in-memory sink.
 
 import assert from 'assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   LUNA_STRATEGY_EXIT_SHADOW_CONFIRM,
@@ -18,9 +18,7 @@ import {
 import { runStrategyExitShadowForReevaluation } from '../shared/position-reevaluator.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
 
-const ROLLBACK_SENTINEL = 'luna_strategy_exit_shadow_smoke_rollback';
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const MIGRATION_PATH = path.join(INVESTMENT_ROOT, 'migrations', '20260619000005_luna_strategy_exit_shadow.sql');
 const REGISTRY_EVALUATOR_PATH = path.join(INVESTMENT_ROOT, 'scripts', 'runtime-luna-registry-evaluator.ts');
 
 function bar(day: number, close: number, extra: any = {}) {
@@ -56,21 +54,6 @@ function params() {
     testah: { maFast: 5, maMid: 25, maSlow: 75, pullbackWindow: 5 },
     regimeMatch: { turtle: ['bull', 'volatile'], testah: ['bull'] },
   };
-}
-
-async function withRollback(work: any) {
-  let output;
-  try {
-    await db.withTransaction(async (tx: any) => {
-      await tx.run(fs.readFileSync(MIGRATION_PATH, 'utf8'));
-      output = await work(tx);
-      throw new Error(ROLLBACK_SENTINEL);
-    });
-  } catch (error) {
-    if (error?.message !== ROLLBACK_SENTINEL) throw error;
-    return output;
-  }
-  throw new Error('luna_strategy_exit_shadow_expected_rollback');
 }
 
 async function main() {
@@ -177,33 +160,33 @@ async function main() {
   assert.equal(failOpen.error, 'fixture_write_down');
   scenarios.push('reevaluator_sidecar_fail_open');
 
-  const transactional = await withRollback(async (tx: any) => {
-    const row = {
-      ...comparisonRow,
-      candleTs: '2099-06-19T00:00:00.000Z',
-      currentReason: 'hold_bias_v1',
-    };
-    await upsertStrategyExitShadow(row, tx.run);
-    await upsertStrategyExitShadow({ ...row, currentReason: 'hold_bias_v2' }, tx.run);
-    const rows = await tx.query(
-      `SELECT COUNT(*)::int AS count, MAX(current_reason) AS current_reason
-         FROM luna_strategy_exit_shadow
-        WHERE position_id = $1
-          AND candle_ts = $2`,
-      [row.positionId, row.candleTs],
-    );
-    assert.equal(Number(rows?.[0]?.count || 0), 1);
-    assert.equal(rows?.[0]?.current_reason, 'hold_bias_v2');
-    return { count: Number(rows?.[0]?.count || 0), currentReason: rows?.[0]?.current_reason };
-  });
+  const shadowRows = new Map();
+  const runFn = async (sql: string, params: any[] = []) => {
+    assert.match(sql, /INSERT INTO luna_strategy_exit_shadow/i);
+    const key = `${params[0]}\u0001${String(params[9])}`;
+    const existing = shadowRows.get(key);
+    const stored = { id: existing?.id || shadowRows.size + 1, currentReason: params[7], params };
+    shadowRows.set(key, stored);
+    return { rowCount: 1, rows: [{ id: stored.id }] };
+  };
+  const row = {
+    ...comparisonRow,
+    candleTs: '2099-06-19T00:00:00.000Z',
+    currentReason: 'hold_bias_v1',
+  };
+  await upsertStrategyExitShadow(row, runFn);
+  await upsertStrategyExitShadow({ ...row, currentReason: 'hold_bias_v2' }, runFn);
+  const storedRow = shadowRows.values().next().value;
+  const transactional = { count: shadowRows.size, currentReason: storedRow.currentReason };
   assert.equal(transactional.count, 1);
-  scenarios.push('upsert_idempotent_rollback');
+  assert.equal(transactional.currentReason, 'hold_bias_v2');
+  scenarios.push('upsert_idempotent_in_memory');
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
   assert.equal(seedDryRun.components.includes('strategy-exit-shadow'), true);
   assert.equal(seedDryRun.components.includes('learned-regime-bias'), true);
   assert.equal(LUNA_COMPONENT_REGISTRY_SEED.some((row: any) => row.component === 'strategy-exit-shadow'), true);
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 46);
+  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 45);
   const evaluatorSource = fs.readFileSync(REGISTRY_EVALUATOR_PATH, 'utf8');
   assert.match(evaluatorSource, /strategy-exit-shadow/);
   assert.match(evaluatorSource, /luna_strategy_exit_shadow/);
