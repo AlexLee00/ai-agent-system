@@ -2981,6 +2981,7 @@ async function recordRefactorOutcome(context, result) {
     ? verifyResults.some(isReadyResult)
     : null;
   const autofixModels = [...new Set(verifyResults.map((item) => item.model).filter(Boolean))];
+  const prMetadata = refactorPrMetadata(active);
   const autofixMeta = isActive ? {
     enabled: Boolean(context.autofixEnabled),
     attempts: verifyResults.reduce((sum, item) => sum + Number(item.autofixAttempts || 0), 0),
@@ -3010,6 +3011,7 @@ async function recordRefactorOutcome(context, result) {
     refactorType: outcomeCandidate?.refactorType || context.refactorType,
     cycleId: context.cycleId,
     source: 'claude-refactorer',
+    ...prMetadata,
     candidateFiles,
     changedFiles,
     avoidedFiles: Array.isArray(result.plan?.avoidedFiles) ? result.plan.avoidedFiles : [],
@@ -3070,6 +3072,17 @@ async function recordRefactorOutcome(context, result) {
       autofix: autofixMeta,
     },
   });
+}
+
+function refactorPrMetadata(active = {}) {
+  const workflow = (active.applyResults || [])
+    .map((item) => item?.prWorkflow)
+    .find((item) => item?.prNumber || item?.prUrl || item?.pr?.number || item?.pr?.url) || null;
+  return {
+    prNumber: workflow?.prNumber ?? workflow?.pr?.number ?? null,
+    prUrl: workflow?.prUrl || workflow?.pr?.url || null,
+    prWorkflow: workflow,
+  };
 }
 
 async function writeRefactorHeartbeat(context, status, meta = {}) {
@@ -3490,6 +3503,7 @@ module.exports = {
   defaultPushRefactorPr,
   defaultOriginContainsCommit,
   refactorPrBranch,
+  refactorPrMetadata,
   runNodeCheckForFile,
   defaultStrictCheck,
   acquireRefactorLock,

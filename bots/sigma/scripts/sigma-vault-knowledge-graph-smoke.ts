@@ -5,7 +5,7 @@ import {
   ONTOLOGY_ACTION_TYPES,
   ONTOLOGY_OBJECT_TYPES,
   ONTOLOGY_REGISTRY_JSON_SCHEMA,
-} from '../../../packages/core/lib/ontology-registry.js';
+} from '../../../packages/core/lib/ontology-registry.ts';
 import {
   buildVaultKnowledgeGraph,
   fetchVaultKnowledgeGraphReport,

@@ -181,7 +181,7 @@ const PROFILES: Record<string, TokenBudgetProfile> = {
     maxInputTokens: 64_000,
     maxOutputTokens: 8_192,
     maxTotalTokens: 80_000,
-    maxCostUsd: 0.25,
+    maxCostUsd: 1.0,
     timeoutMs: 180_000,
     perAttemptTimeoutMs: 90_000,
     fallbackAttempts: 2,

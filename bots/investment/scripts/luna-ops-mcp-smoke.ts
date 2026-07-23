@@ -7,6 +7,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   LUNA_OPS_MCP_TOOLS,
   callLunaOpsTool,
+  callLunaOpsToolWithTimeout,
   installShutdownHandlers,
   startServer,
 } from '../mcp/luna-ops-mcp/src/server.ts';
@@ -63,6 +64,13 @@ export async function runLunaOpsMcpSmoke() {
   const phase5Plan = await callLunaOpsTool('luna_phase5_shadow_plan', { fixture: true });
   assert.equal(phase5Plan.noLiveTradeExecution, true);
   assert.equal(phase5Plan.summary.mcpTools, 12);
+  await assert.rejects(
+    callLunaOpsToolWithTimeout('luna_status', {}, {
+      timeoutMs: 10,
+      callTool: () => new Promise(() => {}),
+    }),
+    /luna_ops_tool_timeout:luna_status:100/,
+  );
   await assertServerLifecycle();
   return {
     ok: true,
