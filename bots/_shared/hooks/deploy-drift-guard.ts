@@ -45,8 +45,8 @@ function stable(value: unknown): unknown {
   return value;
 }
 
-function normalizeEnv(env: Record<string, unknown> = {}, allowlist: string[] = []): Record<string, unknown> {
-  const keys = allowlist.length > 0
+function normalizeEnv(env: Record<string, unknown> = {}, allowlist: string[] | null = null): Record<string, unknown> {
+  const keys = Array.isArray(allowlist)
     ? allowlist
     : Object.keys(env).filter((key) => !SECRET_KEY.test(key));
   const out: Record<string, unknown> = {};
@@ -58,7 +58,9 @@ function normalizeEnv(env: Record<string, unknown> = {}, allowlist: string[] = [
 }
 
 function comparablePlist(plist: Record<string, unknown> = {}, options: Record<string, unknown> = {}) {
-  const envAllowlist = options.envAllowlist || [];
+  const envAllowlist = Object.prototype.hasOwnProperty.call(options, 'envAllowlist')
+    ? options.envAllowlist
+    : null;
   return {
     ProgramArguments: plist.ProgramArguments || null,
     StartCalendarInterval: plist.StartCalendarInterval || null,
@@ -79,8 +81,19 @@ function comparableLiveState(state: Record<string, unknown> = {}, options: Recor
 }
 
 export function compareLaunchdPlistState(expected = {}, loaded = {}, options = {}) {
-  const expectedComparable = comparablePlist(expected, options);
-  const loadedComparable = comparablePlist(loaded, options);
+  const explicitAllowlist = Array.isArray(options.envAllowlist) && options.envAllowlist.length > 0
+    ? options.envAllowlist
+    : null;
+  const expectedEnv = expected.EnvironmentVariables || {};
+  const inferredAllowlist = Object.entries(expectedEnv)
+    .filter(([key, value]) => !SECRET_KEY.test(key) && !String(value || '').startsWith('__SET_IN_LOCAL_LAUNCHAGENT__'))
+    .map(([key]) => key);
+  const compareOptions = {
+    ...options,
+    envAllowlist: explicitAllowlist || inferredAllowlist,
+  };
+  const expectedComparable = comparablePlist(expected, compareOptions);
+  const loadedComparable = comparablePlist(loaded, compareOptions);
   const keys = options.keys || Object.keys(expectedComparable);
   const diffs = [];
   for (const key of keys) {

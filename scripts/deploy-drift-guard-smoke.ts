@@ -41,6 +41,26 @@ function main() {
   );
   assert.equal(report.diffs.find((diff) => diff.key === 'EnvironmentVariables').expected.SAFE_FLAG, 'yes');
 
+  const localOverrideCompatible = compareLaunchdPlistState({
+    EnvironmentVariables: {
+      SAFE_FLAG: 'yes',
+      HUB_CONTROL_APPROVER_IDS: '__SET_IN_LOCAL_LAUNCHAGENT__',
+    },
+  }, {
+    EnvironmentVariables: {
+      SAFE_FLAG: 'yes',
+      HUB_CONTROL_APPROVER_IDS: 'local-value',
+      LOCAL_ONLY_FLAG: 'enabled',
+    },
+  });
+  assert.equal(localOverrideCompatible.ok, true, 'local placeholders and extra installed env must not create drift');
+  const requiredEnvMissing = compareLaunchdPlistState({
+    EnvironmentVariables: { SAFE_FLAG: 'yes' },
+  }, {
+    EnvironmentVariables: { LOCAL_ONLY_FLAG: 'enabled' },
+  });
+  assert.equal(requiredEnvMissing.ok, false, 'missing repo-required env must remain drift');
+
   const live = parseLaunchctlPrint(`
     state = running
     pid = 123
@@ -108,7 +128,7 @@ function main() {
 
   assert.equal(typeof lunaGuard.compareLaunchdPlistState, 'function');
 
-  console.log(JSON.stringify({ ok: true, checks: 13 }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: 15 }, null, 2));
 }
 
 main();
