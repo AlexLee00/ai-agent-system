@@ -8,6 +8,7 @@ import path from 'node:path';
 import { buildTransitionScanOptions } from '../bots/sigma/vault/inbox-processor.ts';
 import {
   buildSessionSnapshot,
+  collectServiceHealth,
   sessionSnapshotOk,
   summarizeLaunchdList,
   writeSnapshot,
@@ -68,6 +69,17 @@ async function main() {
     launchd: { ok: false, failedCount: 0 },
     opsConsoleServe: 'ok',
   }), false, 'launchctl collection failure must fail the snapshot');
+
+  const requestedHealthUrls = [];
+  const defaultHealth = await collectServiceHealth({
+    fetchImpl: async (url) => {
+      requestedHealthUrls.push(String(url));
+      return { ok: true, status: 200, text: async () => '{"ok":true}' };
+    },
+  });
+  assert.equal(defaultHealth.ok, true);
+  assert(requestedHealthUrls.includes('http://127.0.0.1:11434/v1/models'));
+  assert.equal(requestedHealthUrls.some((url) => url.endsWith('/api/tags')), false);
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'infra-bundle2-'));
   const snapshot = await buildSessionSnapshot({

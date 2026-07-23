@@ -25,7 +25,7 @@ const DEFAULT_SERVICES = [
   { key: 'ska_ops_mcp', url: 'http://127.0.0.1:4098/health' },
   { key: 'darwin_ops_mcp', url: 'http://127.0.0.1:4099/health' },
   { key: 'blog_node_server', url: 'http://127.0.0.1:3100/health' },
-  { key: 'ollama', url: 'http://127.0.0.1:11434/api/tags' },
+  { key: 'local_llm', url: 'http://127.0.0.1:11434/v1/models' },
 ];
 
 function hasFlag(name) {
