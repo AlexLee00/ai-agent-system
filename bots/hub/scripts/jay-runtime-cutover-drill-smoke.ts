@@ -18,6 +18,7 @@ async function main() {
     JAY_3TIER_TELEGRAM: '1',
     JAY_SKILL_EXTRACTION: '1',
     JAY_COMMANDER_BOT_QUEUE_ENABLED: '1',
+    JAY_COMMANDER_INCIDENT_TASK_TEAMS: process.env.JAY_COMMANDER_INCIDENT_TASK_TEAMS || 'luna,blog,ska',
     HUB_AUTH_TOKEN: process.env.HUB_AUTH_TOKEN || 'jay-cutover-smoke-token',
     HUB_CONTROL_CALLBACK_SECRET: process.env.HUB_CONTROL_CALLBACK_SECRET || 'jay-cutover-smoke-callback-secret',
     HUB_CONTROL_APPROVER_IDS: process.env.HUB_CONTROL_APPROVER_IDS || '9001',
