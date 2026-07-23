@@ -264,6 +264,30 @@ function _actualProviderAttempts(attempts: AnyRecord[]): AnyRecord[] {
   return attempts.filter((attempt) => attempt.providerAttempted !== false);
 }
 
+function _fallbackExhaustionAlarmDecision(
+  attempts: AnyRecord[],
+  plannedRouteCount: unknown,
+  processedRouteCount: unknown,
+): AnyRecord {
+  const providerAttempts = _actualProviderAttempts(attempts);
+  const planned = Math.max(0, Math.floor(Number(plannedRouteCount) || 0));
+  const processed = Math.max(0, Math.floor(Number(processedRouteCount) || 0));
+  const last = attempts[attempts.length - 1] || {};
+  const deadlineBeforeChainComplete = (
+    _isTotalDeadlineError(last)
+    && planned > 0
+    && processed < planned
+  );
+  const fallbackCount = Math.max(0, providerAttempts.length - 1);
+  return {
+    notify: !deadlineBeforeChainComplete,
+    reason: deadlineBeforeChainComplete ? 'request_deadline_before_chain_complete' : null,
+    providerAttempts,
+    fallbackCount,
+    fallbackUsed: fallbackCount > 0,
+  };
+}
+
 function _lastActualProviderFailureMetadata(attempts: AnyRecord[]): AnyRecord {
   const last = [...attempts].reverse().find((attempt) => attempt.providerAttempted !== false);
   if (!last) return {};
@@ -529,8 +553,10 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
   const chainTimeout = tokenBudget.perAttemptTimeoutMs || req.timeoutMs || 30_000;
   const attempts: AnyRecord[] = [];
   const capacityBlockedProviders = new Set<string>();
+  let processedRouteCount = 0;
 
   for (const entry of cooldownPlan.chain) {
+    processedRouteCount += 1;
     const route = _chainEntryToRoute(entry);
     const selectedRoute = _normalizeRoute(route, req.abstractModel);
     const selectedProvider = _routeToProvider(selectedRoute);
@@ -609,10 +635,18 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
     await _recordBudgetUsage(req, safeFallback, 'degraded');
     return safeFallback;
   }
-  if (!_shouldSuppressFallbackExhaustionAlarm(req, selectorChain)) {
+  const alarmDecision = _fallbackExhaustionAlarmDecision(
+    attempts,
+    cooldownPlan.chain.length,
+    processedRouteCount,
+  );
+  const policySuppressesAlarm = _shouldSuppressFallbackExhaustionAlarm(req, selectorChain);
+  if (!policySuppressesAlarm && alarmDecision.notify) {
     await _notifyFallbackExhaustion(req, attempts, team);
+  } else if (!policySuppressesAlarm && alarmDecision.reason) {
+    console.warn(`[llm/unified] ${selectorChain.selectorKey}: request deadline expired before fallback chain completed`);
   }
-  const providerAttempts = _actualProviderAttempts(attempts);
+  const providerAttempts = alarmDecision.providerAttempts;
   const exhausted = {
     ok: false,
     provider: 'failed',
@@ -621,8 +655,12 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
     attempted_providers: providerAttempts.map((a: AnyRecord) => a.provider),
     avoidedProviders: selectorChain.avoidedProviders || [],
     strictProviderFamily: selectorChain.strictProviderFamily || null,
-    fallbackCount: providerAttempts.length,
-    fallbackUsed: providerAttempts.length > 0,
+    fallbackCount: alarmDecision.fallbackCount,
+    fallbackUsed: alarmDecision.fallbackUsed,
+    ...(alarmDecision.reason ? {
+      fallbackExhaustionAlarmSuppressed: true,
+      fallbackExhaustionSuppressionReason: alarmDecision.reason,
+    } : {}),
     ..._admissionTelemetry(attempts),
     ..._lastActualProviderFailureMetadata(attempts),
     selectorKey: selectorChain.selectorKey,
@@ -654,8 +692,10 @@ async function _callWithProfileChain(req: LlmRequest, profile: AnyRecord, team: 
   const chainTimeout = Math.min(profile.timeout_ms || req.timeoutMs || 30_000, tokenBudget.perAttemptTimeoutMs || 30_000);
   const attempts: AnyRecord[] = [];
   const capacityBlockedProviders = new Set<string>();
+  let processedRouteCount = 0;
 
   for (const route of cooldownPlan.chain) {
+    processedRouteCount += 1;
     const routeKey = typeof route === 'string' ? route : _chainEntryToRoute(route);
     const selectedRoute = _normalizeRoute(routeKey, req.abstractModel);
     const selectedProvider = _routeToProvider(selectedRoute);
@@ -704,16 +744,29 @@ async function _callWithProfileChain(req: LlmRequest, profile: AnyRecord, team: 
     return backpressure;
   }
 
-  if (!_shouldSuppressFallbackExhaustionAlarm(req, null)) {
+  const alarmDecision = _fallbackExhaustionAlarmDecision(
+    attempts,
+    cooldownPlan.chain.length,
+    processedRouteCount,
+  );
+  const policySuppressesAlarm = _shouldSuppressFallbackExhaustionAlarm(req, null);
+  if (!policySuppressesAlarm && alarmDecision.notify) {
     await _notifyFallbackExhaustion(req, attempts, team);
+  } else if (!policySuppressesAlarm && alarmDecision.reason) {
+    console.warn('[llm/unified] request deadline expired before fallback chain completed');
   }
-  const providerAttempts = _actualProviderAttempts(attempts);
+  const providerAttempts = alarmDecision.providerAttempts;
   const exhausted = {
     ok: false, provider: 'failed',
     durationMs: attempts.reduce((s: number, a: AnyRecord) => s + Number(a.durationMs || 0), 0),
     error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
     attempted_providers: providerAttempts.map((a: AnyRecord) => a.provider),
-    fallbackCount: providerAttempts.length,
+    fallbackCount: alarmDecision.fallbackCount,
+    fallbackUsed: alarmDecision.fallbackUsed,
+    ...(alarmDecision.reason ? {
+      fallbackExhaustionAlarmSuppressed: true,
+      fallbackExhaustionSuppressionReason: alarmDecision.reason,
+    } : {}),
     ..._admissionTelemetry(attempts),
     ..._lastActualProviderFailureMetadata(attempts),
     tokenBudget,
@@ -1619,6 +1672,7 @@ module.exports = {
     _sharedAdmissionDisposition,
     _sharedAdmissionResponse,
     _actualProviderAttempts,
+    _fallbackExhaustionAlarmDecision,
     _lastActualProviderFailureMetadata,
     _admissionRejections,
     _admissionTelemetry,

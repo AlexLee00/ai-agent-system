@@ -18,6 +18,43 @@ describe('Hub LLM total deadline', () => {
     expect(req._deadlineAt).toBe(50_000);
   });
 
+  test('does not raise fallback exhaustion when the request deadline prevents fallback', () => {
+    const decision = _testOnly._fallbackExhaustionAlarmDecision([{
+      provider: 'openai-oauth/gpt-5.4-mini',
+      error: 'llm_total_deadline_exceeded:provider_attempt',
+      providerAttempted: true,
+    }], 2, 1);
+
+    expect(decision).toMatchObject({
+      notify: false,
+      reason: 'request_deadline_before_chain_complete',
+      fallbackCount: 0,
+      fallbackUsed: false,
+    });
+  });
+
+  test('keeps fallback exhaustion critical after every planned route was attempted', () => {
+    const decision = _testOnly._fallbackExhaustionAlarmDecision([
+      {
+        provider: 'openai-oauth/gpt-5.4-mini',
+        error: 'openai_oauth_timeout',
+        providerAttempted: true,
+      },
+      {
+        provider: 'groq/llama-3.1-8b-instant',
+        error: 'llm_total_deadline_exceeded:provider_attempt',
+        providerAttempted: true,
+      },
+    ], 2, 2);
+
+    expect(decision).toMatchObject({
+      notify: true,
+      reason: null,
+      fallbackCount: 1,
+      fallbackUsed: true,
+    });
+  });
+
   test('interrupts retry backoff as soon as the request deadline aborts', async () => {
     jest.useFakeTimers();
     const controller = new AbortController();
