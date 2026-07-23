@@ -73,13 +73,13 @@ async function main() {
 
     delete process.env.BLOG_MARKETING_ENABLED;
     assert.equal(isBlogMarketingEnabled(), false, 'marketing must default off');
-    assert.equal(buildMarketingDisabledResult('smoke').reason, 'blog_marketing_disabled');
+    assert.equal(buildMarketingDisabledResult('smoke').reason, 'blog_feature_retired');
 
     delete process.env.BLOG_SNS_CROSSPOST_ENABLED;
     assert.equal(isSnsCrosspostEnabled(), false, 'SNS crosspost must default off');
-    assert.equal(buildSnsCrosspostDisabledResult('instagram').reason, 'blog_sns_crosspost_disabled');
+    assert.equal(buildSnsCrosspostDisabledResult('instagram').reason, 'blog_feature_retired');
     process.env.BLOG_SNS_CROSSPOST_ENABLED = 'true';
-    assert.equal(isSnsCrosspostEnabled(), true, 'SNS gate true branch missing');
+    assert.equal(isSnsCrosspostEnabled(), false, 'retired SNS publishing must not be re-enabled by env');
 
     const telemetryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-telemetry-'));
     const telemetryPath = path.join(telemetryDir, 'telemetry.jsonl');

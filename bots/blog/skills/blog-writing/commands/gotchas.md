@@ -6,6 +6,7 @@
 - Genre contamination is prohibited: IT and book evidence must not cross-load.
 - Reddit was removed from the active trend path because it polluted source quality.
 - Queue duplicate incident was about 96%; preserve book review dedupe and done-row immutability.
-- Marketing is default off under `BLOG_MARKETING_ENABLED`.
-- SNS crosspost is default off under `BLOG_SNS_CROSSPOST_ENABLED`.
+- Marketing is retired; env values must not reactivate execution.
+- Instagram/Facebook publishing is retired; secret keys remain for audit only.
+- Engagement is split into 30 comments with sympathy plus 30 standalone sympathies per day.
 - `BLOG_WRITER_MODEL` is master-operated; code must only tag and route writer calls.

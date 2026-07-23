@@ -44,10 +44,10 @@ describe('marketing-dpo', () => {
     expect(dpo.isEnabled()).toBe(false);
   });
 
-  test('isEnabled() — BLOG_DPO_ENABLED=true 시 true', () => {
+  test('isEnabled() — 은퇴 후 env가 true여도 false', () => {
     process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
-    expect(dpo.isEnabled()).toBe(true);
+    expect(dpo.isEnabled()).toBe(false);
   });
 
   // calcPostScore

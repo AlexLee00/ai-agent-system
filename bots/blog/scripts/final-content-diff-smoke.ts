@@ -37,7 +37,7 @@ function makeFixtureHtml({ changed = true }: { changed?: boolean } = {}) {
   return `
     <html>
       <head>
-        <meta property="og:title" content="[에이전트 입문 5강] 최종 제목">
+        <meta property="og:title" content="${changed ? '[에이전트 입문 5강] 최종 제목' : '[에이전트 입문 5강] 초안 제목'}">
         <title>fallback title</title>
       </head>
       <body>
@@ -220,11 +220,24 @@ async function run() {
   assert.equal(unchangedPool.state.ledgerWrites[0].changed, false);
   tests.push({ id: 'TS-B9-6', ok: true, name: 'unchanged posts write ledger only' });
 
+  const titleOnlyResult = await collector.processFinalContentCandidate(makePost(), {}, {
+    fetchFinalContent: async () => ({
+      title: '[에이전트 입문 5강] 제목만 수정',
+      content: makePost().content,
+      html: '',
+      url: makePost().naver_url,
+    }),
+  });
+  assert.equal(titleOnlyResult.changed, true);
+  assert.equal(titleOnlyResult.metadata.titleChanged, true);
+  assert.match(titleOnlyResult.diffSummary, /^title_changed:/);
+  tests.push({ id: 'TS-B9-7', ok: true, name: 'title-only master edit enters feedback loop' });
+
   const learner = require('../lib/feedback-learner.ts');
   const weeklyEvolutionSource = fs.readFileSync(path.join(PROJECT_ROOT, 'bots/blog/scripts/weekly-evolution.ts'), 'utf8');
   assert.equal(typeof learner.aggregatePatterns, 'function');
   assert.match(weeklyEvolutionSource, /aggregatePatterns\s*\(/);
-  tests.push({ id: 'TS-B9-7', ok: true, name: 'weekly-evolution aggregatePatterns consumer path remains wired' });
+  tests.push({ id: 'TS-B9-8', ok: true, name: 'weekly-evolution aggregatePatterns consumer path remains wired' });
 
   const report = {
     ok: tests.every((test) => test.ok),

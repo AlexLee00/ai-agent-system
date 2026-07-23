@@ -12,8 +12,6 @@ defmodule TeamJay.Teams.BlogSupervisor do
     %{name: :blog_sync_book_catalog, script: "bots/blog/scripts/sync-book-catalog.ts --json", schedule: nil},
     %{name: :blog_sync_book_review_queue, script: "bots/blog/scripts/build-book-review-queue.ts --json --limit 5", schedule: nil},
     %{name: :blog_collect_views, script: "bots/blog/scripts/collect-views.ts", schedule: nil},
-    %{name: :blog_channel_insights, script: "bots/blog/scripts/channel-insights-collector.ts --json", schedule: nil},
-    %{name: :blog_revenue_strategy, script: "bots/blog/scripts/revenue-strategy-updater.ts --json", schedule: nil},
     %{
       name: :blog_node_server,
       script: "bots/blog/api/node-server.ts",
@@ -21,19 +19,7 @@ defmodule TeamJay.Teams.BlogSupervisor do
       schedule: nil,
       health_url: "http://127.0.0.1:3100/health"
     },
-    %{name: :blog_competitor_analysis, script: "bots/blog/scripts/run-competitor-analysis.ts --json", schedule: nil},
-    %{
-      name: :blog_marketing_snapshot,
-      script: "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH && cd elixir/team_jay && mix blog.marketing.snapshot",
-      runner: {:shell, "/bin/zsh"},
-      schedule: nil
-    },
-    %{
-      name: :blog_marketing_report,
-      script: "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH && cd elixir/team_jay && mix blog.marketing.notify --brief --send",
-      runner: {:shell, "/bin/zsh"},
-      schedule: nil
-    }
+    %{name: :blog_competitor_analysis, script: "bots/blog/scripts/run-competitor-analysis.ts --json", schedule: nil}
   ]
 
   def start_link(opts \\ []) do

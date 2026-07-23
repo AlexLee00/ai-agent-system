@@ -14,6 +14,13 @@ const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { getBlogCommenterConfig, getBlogNeighborCommenterConfig } = require('./runtime-config.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('./strategy-loader.ts');
+const {
+  BLOG_ENGAGEMENT_POLICY,
+  COMMENT_SYMPATHY_ACTION_TYPES,
+  STANDALONE_SYMPATHY_ACTION_TYPES,
+  SYMPATHY_ACTION_TYPES,
+  clampActionsPerCycle,
+} = require('./engagement-policy.ts');
 const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
 const { COMMENT_TYPE_STRATEGIES, classifyComment } = require('./comment-classifier.ts');
 const { recordCommentLearningEvent, deriveNeighborLearningType } = require('./comment-learning.ts');
@@ -174,21 +181,20 @@ function getCommenterConfig() {
 
 function getNeighborCommenterConfig() {
   const runtime = getBlogNeighborCommenterConfig();
-  const strategy = loadStrategyBundle().plan;
-  const neighborTargetPerCycle = Math.max(1, resolveExecutionTarget('neighborCommentTargetPerCycle', strategy, 1));
-  const sympathyTargetPerCycle = Math.max(1, resolveExecutionTarget('sympathyTargetPerCycle', strategy, 1));
-  const dominantSocialTarget = Math.max(neighborTargetPerCycle, sympathyTargetPerCycle);
-  const derivedMaxDaily = Math.max(Number(runtime.maxDaily || 20), dominantSocialTarget * 4);
-  const derivedMaxCollectPerCycle = Math.max(Number(runtime.maxCollectPerCycle || 20), dominantSocialTarget * 2);
-  const derivedMaxProcessPerCycle = Math.max(Number(runtime.maxProcessPerCycle || 20), dominantSocialTarget);
+  const neighborTargetPerCycle = BLOG_ENGAGEMENT_POLICY.maxActionsPerCycle;
+  const sympathyTargetPerCycle = BLOG_ENGAGEMENT_POLICY.maxActionsPerCycle;
+  const derivedMaxCollectPerCycle = Math.max(Number(runtime.maxCollectPerCycle || 20), 2);
   return {
     enabled: runtime.enabled === true,
     blogId: String(runtime.blogId || '').trim(),
-    maxDaily: derivedMaxDaily,
+    maxDaily: BLOG_ENGAGEMENT_POLICY.neighborCommentsPerDay,
+    commentSympathyMaxDaily: BLOG_ENGAGEMENT_POLICY.commentSympathiesPerDay,
+    sympathyMaxDaily: BLOG_ENGAGEMENT_POLICY.standaloneSympathiesPerDay,
+    totalSympathyMaxDaily: BLOG_ENGAGEMENT_POLICY.totalSympathiesPerDay,
     activeStartHour: Number(runtime.activeStartHour || 9),
     activeEndHour: Number(runtime.activeEndHour || 21),
     maxCollectPerCycle: derivedMaxCollectPerCycle,
-    maxProcessPerCycle: derivedMaxProcessPerCycle,
+    maxProcessPerCycle: BLOG_ENGAGEMENT_POLICY.maxActionsPerCycle,
     recentWindowDays: Number(runtime.recentWindowDays || 14),
     aggressiveRecentWindowDays: Number(runtime.aggressiveRecentWindowDays || 1),
     minCommentLen: Number(runtime.minCommentLen || 45),
@@ -276,7 +282,7 @@ function buildAdaptiveNeighborCadence(config, metrics = {}) {
   const replySuccess = Math.max(0, Number(metrics.replySuccess || 0));
   const neighborSuccess = Math.max(0, Number(metrics.neighborSuccess || 0));
   const sympathySuccess = Math.max(0, Number(metrics.sympathySuccess || 0));
-  const baseProcess = Math.max(1, Number(config.maxProcessPerCycle || 20));
+  const baseProcess = BLOG_ENGAGEMENT_POLICY.maxActionsPerCycle;
   const baseCollect = Math.max(1, Number(config.maxCollectPerCycle || 20));
   const adaptiveEnabled = config.adaptiveEnabled !== false;
   const boostCap = Math.max(2, Number(config.adaptiveBoostCap || 12));
@@ -313,9 +319,9 @@ function buildAdaptiveNeighborCadence(config, metrics = {}) {
     processBoost,
     collectBoost,
     sympathyBoost,
-    effectiveProcessLimit: baseProcess + processBoost,
+    effectiveProcessLimit: BLOG_ENGAGEMENT_POLICY.maxActionsPerCycle,
     effectiveCollectLimit: baseCollect + collectBoost,
-    effectiveSympathyLimit: baseProcess + sympathyBoost,
+    effectiveSympathyLimit: BLOG_ENGAGEMENT_POLICY.maxActionsPerCycle,
   };
 }
 
@@ -417,13 +423,13 @@ function resolveNeighborCommentTimeouts(config = {}, { testMode = false } = {}) 
   };
 }
 
-async function processNeighborCommentWithTimeout(candidate, { testMode = false } = {}) {
+async function processNeighborCommentWithTimeout(candidate, { testMode = false, withSympathy = false } = {}) {
   const config = getNeighborCommenterConfig();
   const { totalTimeoutMs } = resolveNeighborCommentTimeouts(config, { testMode });
   let timeoutId;
   try {
     return await Promise.race([
-      processNeighborComment(candidate, { testMode }),
+      processNeighborComment(candidate, { testMode, withSympathy }),
       new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
           reject(createTimeoutError('neighbor_comment_process_timeout', `neighbor_comment_process_timeout:${totalTimeoutMs}`));
@@ -456,92 +462,23 @@ async function humanDelay(minSec, maxSec, testMode = false) {
 }
 
 async function ensureSchema() {
-  await pgPool.run('blog', `
-    CREATE TABLE IF NOT EXISTS ${TABLE} (
-      id SERIAL PRIMARY KEY,
-      post_url TEXT NOT NULL,
-      post_title TEXT,
-      commenter_id TEXT,
-      commenter_name TEXT,
-      comment_text TEXT NOT NULL,
-      comment_ref TEXT,
-      dedupe_key TEXT NOT NULL UNIQUE,
-      reply_text TEXT,
-      reply_at TIMESTAMPTZ,
-      detected_at TIMESTAMPTZ DEFAULT NOW(),
-      status TEXT DEFAULT 'pending',
-      error_message TEXT,
-      meta JSONB DEFAULT '{}'::JSONB
-    )
+  const rows = await pgPool.query('blog', `
+    SELECT
+      to_regclass('blog.comments') AS comments,
+      to_regclass('blog.comment_actions') AS comment_actions,
+      to_regclass('blog.neighbor_comments') AS neighbor_comments,
+      to_regclass('blog.success_pattern_library') AS success_pattern_library,
+      to_regclass('blog.failure_taxonomy') AS failure_taxonomy
   `);
-  await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_comments_status ON ${TABLE}(status)`);
-  await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_comments_detected ON ${TABLE}(detected_at DESC)`);
-  await pgPool.run('blog', `
-    CREATE TABLE IF NOT EXISTS ${ACTION_TABLE} (
-      id SERIAL PRIMARY KEY,
-      action_type TEXT NOT NULL,
-      target_blog TEXT,
-      target_post_url TEXT,
-      comment_text TEXT,
-      success BOOLEAN DEFAULT true,
-      executed_at TIMESTAMPTZ DEFAULT NOW(),
-      meta JSONB DEFAULT '{}'::JSONB
-    )
-  `);
-  await pgPool.run('blog', `
-    CREATE TABLE IF NOT EXISTS ${NEIGHBOR_TABLE} (
-      id SERIAL PRIMARY KEY,
-      target_blog_id TEXT NOT NULL,
-      target_blog_name TEXT,
-      source_type TEXT NOT NULL,
-      source_ref TEXT,
-      post_url TEXT NOT NULL,
-      post_title TEXT,
-      dedupe_key TEXT NOT NULL UNIQUE,
-      comment_text TEXT,
-      status TEXT DEFAULT 'pending',
-      error_message TEXT,
-      posted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      meta JSONB DEFAULT '{}'::JSONB
-    )
-  `);
-  await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_neighbor_comments_status ON ${NEIGHBOR_TABLE}(status, created_at DESC)`);
-  await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_neighbor_comments_blog ON ${NEIGHBOR_TABLE}(target_blog_id, created_at DESC)`);
-  await pgPool.run('blog', `
-    CREATE TABLE IF NOT EXISTS blog.success_pattern_library (
-      id BIGSERIAL PRIMARY KEY,
-      pattern_type TEXT NOT NULL,
-      pattern_template TEXT,
-      platform TEXT,
-      category TEXT,
-      avg_performance NUMERIC(6,2) DEFAULT 0,
-      usage_count INTEGER DEFAULT 0,
-      first_seen_at TIMESTAMPTZ DEFAULT NOW(),
-      last_used_at TIMESTAMPTZ,
-      active BOOLEAN DEFAULT true
-    )
-  `);
-  await pgPool.run('blog', `
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_blog_patterns_uq
-      ON blog.success_pattern_library(pattern_type, COALESCE(pattern_template, ''), COALESCE(platform, ''))
-  `);
-  await pgPool.run('blog', `
-    CREATE TABLE IF NOT EXISTS blog.failure_taxonomy (
-      id BIGSERIAL PRIMARY KEY,
-      failure_category TEXT NOT NULL,
-      example_post_ids TEXT[],
-      typical_characteristics JSONB,
-      avoidance_hint TEXT,
-      platform TEXT,
-      frequency_count INTEGER DEFAULT 1,
-      last_seen_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-  await pgPool.run('blog', `
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_blog_failure_taxonomy_uq
-      ON blog.failure_taxonomy(failure_category)
-  `);
+  const state = rows?.[0];
+  if (!state) return { ok: true, probeSkipped: true };
+  const missing = Object.entries(state)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(`blog_schema_not_ready:${missing.join(',')}`);
+  }
+  return { ok: true, probeSkipped: false };
 }
 
 function normalizeEngagementToken(value, fallback = 'unknown') {
@@ -701,10 +638,11 @@ async function recordCommentAction(actionType, payload = {}) {
       source: 'commenter',
       meta: {
         actionType: subtype,
-        targetBlog: payload.targetBlog || null,
-        targetPostUrl,
-        commentText: payload.commentText || '',
-        ...((payload.meta && typeof payload.meta === 'object') ? payload.meta : {}),
+        targetHash: crypto.createHash('sha256').update(String(payload.targetBlog || '')).digest('hex').slice(0, 12),
+        postHash: crypto.createHash('sha256').update(String(targetPostUrl || '')).digest('hex').slice(0, 12),
+        commentLength: String(payload.commentText || '').length,
+        phase: String(payload?.meta?.phase || ''),
+        reason: String(payload?.meta?.reason || errorCode).slice(0, 120),
       },
     });
   }
@@ -731,15 +669,27 @@ async function getTodayNeighborCommentCount() {
   return Number(row?.count || 0);
 }
 
-async function getTodayActionCount(actionType) {
+async function countTodaySuccessfulActions(actionTypes) {
   const row = await pgPool.get('blog', `
     SELECT COUNT(*) AS count
     FROM ${ACTION_TABLE}
-    WHERE action_type = $1
+    WHERE action_type = ANY($1::text[])
       AND success = true
       AND timezone('Asia/Seoul', executed_at)::date = timezone('Asia/Seoul', now())::date
-  `, [actionType]);
+  `, [actionTypes]);
   return Number(row?.count || 0);
+}
+
+async function getTodaySympathyCount() {
+  return countTodaySuccessfulActions(SYMPATHY_ACTION_TYPES);
+}
+
+async function getTodayCommentSympathyCount() {
+  return countTodaySuccessfulActions(COMMENT_SYMPATHY_ACTION_TYPES);
+}
+
+async function getTodayStandaloneSympathyCount() {
+  return countTodaySuccessfulActions(STANDALONE_SYMPATHY_ACTION_TYPES);
 }
 
 async function getPendingComments(limit = 20) {
@@ -1238,7 +1188,7 @@ async function getNeighborTargetInteractionStats(targetBlogId, currentCandidateI
 }
 
 async function updateNeighborCommentStatus(id, status, options = {}) {
-  await pgPool.run('blog', `
+  const result = await pgPool.run('blog', `
     UPDATE ${NEIGHBOR_TABLE}
     SET status = $2,
         comment_text = COALESCE($3, comment_text),
@@ -1246,6 +1196,8 @@ async function updateNeighborCommentStatus(id, status, options = {}) {
         posted_at = CASE WHEN $2 = 'posted' THEN NOW() ELSE posted_at END,
         meta = COALESCE(meta, '{}'::jsonb) || $5::jsonb
     WHERE id = $1
+      AND NOT (status = 'posted' AND $2 IN ('failed', 'skipped'))
+    RETURNING status
   `, [
     id,
     status,
@@ -1253,6 +1205,10 @@ async function updateNeighborCommentStatus(id, status, options = {}) {
     options.errorMessage || null,
     stringifyJsonbPayload(options.meta || {}),
   ]);
+  return {
+    updated: Number(result?.rowCount || 0) > 0,
+    status: result?.rows?.[0]?.status || null,
+  };
 }
 
 async function getRecentlyTargetedPostUrls(recentWindowDays = 14) {
@@ -3736,6 +3692,13 @@ async function inspectReplyControlsLite(page) {
 async function saveCommentDebugSnapshot(page, comment, stage) {
   try {
     ensureDir(BLOG_COMMENTER_DEBUG_DIR);
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    for (const filename of fs.readdirSync(BLOG_COMMENTER_DEBUG_DIR)) {
+      const filePath = path.join(BLOG_COMMENTER_DEBUG_DIR, filename);
+      try {
+        if (fs.statSync(filePath).mtimeMs < cutoff) fs.unlinkSync(filePath);
+      } catch {}
+    }
     const logNo = extractLogNo(comment?.post_url);
     const stamp = Date.now();
     const prefix = path.join(BLOG_COMMENTER_DEBUG_DIR, `${stamp}-${stage}-${logNo || 'unknown'}`);
@@ -3906,8 +3869,9 @@ async function saveCommentDebugSnapshot(page, comment, stage) {
       })()
     `).catch(() => null);
     if (payload) {
-      fs.writeFileSync(`${prefix}.json`, JSON.stringify(payload, null, 2), 'utf8');
-      fs.writeFileSync(`${prefix}.html`, payload.html || '', 'utf8');
+      const { html = '', ...summary } = payload;
+      fs.writeFileSync(`${prefix}.json`, JSON.stringify(summary, null, 2), { encoding: 'utf8', mode: 0o600 });
+      fs.writeFileSync(`${prefix}.html`, String(html).slice(0, 2_000_000), { encoding: 'utf8', mode: 0o600 });
     }
     return prefix;
   } catch {
@@ -6116,19 +6080,8 @@ async function runCommentReply({ testMode = false } = {}) {
   const failureRate = totalProcessed > 0 ? failed / totalProcessed : 0;
   const exhaustedReplyWorkload = pending.length <= targets.length;
   const unmetReplyTarget = Math.max(0, remainingCycle - replied);
-  let externalFill = null;
-
-  if (exhaustedReplyWorkload && unmetReplyTarget > 0) {
-    externalFill = await runNeighborCommenter({
-      testMode,
-      limitOverride: testMode ? 1 : unmetReplyTarget,
-      trigger: 'reply_gap_fill',
-    }).catch((error) => ({
-      ok: false,
-      failed: true,
-      reason: String(error?.message || error),
-    }));
-  }
+  // 외부 댓글은 전용 30-slot 스케줄에서만 실행해 등록 시각을 균등하게 유지한다.
+  const externalFill = null;
 
   await _postCommenterAlarm({
     fromBot: 'blog-commenter',
@@ -6189,7 +6142,20 @@ async function _recordNeighborCommentSuccess(candidate, generated, posted) {
     console.warn('[neighbor-commenter] comment learning record failed:', error instanceof Error ? error.message : String(error));
   });
 
-  if (!posted?.sympathy?.ok) return;
+  if (!posted?.sympathy?.ok) {
+    await recordCommentAction('neighbor_comment_sympathy', {
+      targetBlog: candidate.target_blog_id,
+      targetPostUrl: candidate.post_url,
+      success: false,
+      meta: {
+        neighborCommentId: candidate.id,
+        sourceType: candidate.source_type || null,
+        targetBlogName: candidate.target_blog_name || null,
+        error: String(posted?.sympathy?.error || 'sympathy_not_confirmed').slice(0, 160),
+      },
+    }).catch(() => {});
+    return;
+  }
 
   await recordCommentAction('neighbor_comment_sympathy', {
     targetBlog: candidate.target_blog_id,
@@ -6204,7 +6170,7 @@ async function _recordNeighborCommentSuccess(candidate, generated, posted) {
   });
 }
 
-async function processNeighborComment(candidate, { testMode = false } = {}) {
+async function processNeighborComment(candidate, { testMode = false, withSympathy = false } = {}) {
   const config = getNeighborCommenterConfig();
   const { postTimeoutMs } = resolveNeighborCommentTimeouts(config, { testMode });
   const interactionStats = await getNeighborTargetInteractionStats(candidate.target_blog_id, candidate.id).catch(() => ({ priorSuccessCount: 0 }));
@@ -6263,7 +6229,7 @@ async function processNeighborComment(candidate, { testMode = false } = {}) {
   try {
     posted = await postComment(effectiveCandidate.post_url, generated.comment, {
       testMode,
-      withSympathy: true,
+      withSympathy,
       operationTimeoutMs: postTimeoutMs,
     });
   } catch (error) {
@@ -6309,8 +6275,8 @@ async function runNeighborSympathy({ testMode = false } = {}) {
 
   await ensureSchema();
 
-  const todayCount = await getTodayActionCount('neighbor_sympathy');
-  if (todayCount >= config.maxDaily) {
+  const todayCount = await getTodayStandaloneSympathyCount();
+  if (todayCount >= config.sympathyMaxDaily) {
     return { skipped: true, reason: 'daily_limit', count: todayCount };
   }
 
@@ -6326,9 +6292,9 @@ async function runNeighborSympathy({ testMode = false } = {}) {
     persist: false,
     collectLimit: testMode ? 1 : cadence.effectiveCollectLimit,
   });
-  const remaining = Math.max(0, config.maxDaily - todayCount);
+  const remaining = Math.max(0, config.sympathyMaxDaily - todayCount);
   const cycleSympathyTarget = testMode ? 1 : Math.max(1, Number(config.strategySympathyTargetPerCycle || cadence.effectiveSympathyLimit || 1));
-  const effectiveLimit = testMode ? 1 : Math.min(cadence.effectiveSympathyLimit, remaining, cycleSympathyTarget);
+  const effectiveLimit = testMode ? 1 : clampActionsPerCycle(cycleSympathyTarget, remaining);
   const targets = newCandidates.slice(0, effectiveLimit);
 
   let liked = 0;
@@ -6338,6 +6304,20 @@ async function runNeighborSympathy({ testMode = false } = {}) {
   for (const candidate of targets) {
     try {
       const sympathy = await clickSympathy(candidate.postUrl, { testMode });
+      if (sympathy?.alreadyActive) {
+        skipped += 1;
+        await recordCommentAction('neighbor_sympathy_skip', {
+          targetBlog: candidate.targetBlogId,
+          targetPostUrl: candidate.postUrl,
+          success: true,
+          meta: {
+            sourceType: candidate.sourceType || null,
+            targetBlogName: candidate.targetBlogName || null,
+            reason: 'already_active',
+          },
+        }).catch(() => {});
+        continue;
+      }
       await recordCommentAction('neighbor_sympathy', {
         targetBlog: candidate.targetBlogId,
         targetPostUrl: candidate.postUrl,
@@ -6409,7 +6389,7 @@ async function runNeighborSympathy({ testMode = false } = {}) {
   await _postCommenterAlarm({
     fromBot: 'blog-neighbor-sympathy',
     alertLevel: failed >= 2 ? 3 : 2,
-    message: `이웃 공감 ${liked}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + liked}/${config.maxDaily})`,
+    message: `이웃 공감 ${liked}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + liked}/${config.sympathyMaxDaily})`,
     shouldSend: liked > 0 || failed > 0,
   });
 
@@ -6438,7 +6418,7 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
   await ensureSchema();
 
   const todayCount = await getTodayNeighborCommentCount();
-  const todaySympathyCount = await getTodayActionCount('neighbor_comment_sympathy');
+  const todayCommentSympathyCount = await getTodayCommentSympathyCount();
   const replySuccess = await getTodayReplyCount();
   if (todayCount >= config.maxDaily) {
     return { skipped: true, reason: 'daily_limit', count: todayCount };
@@ -6447,7 +6427,7 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
   const cadence = buildAdaptiveNeighborCadence(config, {
     replySuccess,
     neighborSuccess: todayCount,
-    sympathySuccess: todaySympathyCount,
+    sympathySuccess: todayCommentSympathyCount,
   });
   const newCandidates = await collectNeighborCandidates({
     testMode,
@@ -6457,8 +6437,8 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
   const remaining = Math.max(0, config.maxDaily - todayCount);
   const cycleNeighborTarget = testMode ? 1 : Math.max(1, Number(config.strategyNeighborTargetPerCycle || cadence.effectiveProcessLimit || 1));
   const requestedLimit = Number(limitOverride || 0) > 0
-    ? Math.min(remaining, Number(limitOverride || 0))
-    : Math.min(cadence.effectiveProcessLimit, remaining, cycleNeighborTarget);
+    ? clampActionsPerCycle(Number(limitOverride || 0), remaining)
+    : clampActionsPerCycle(cycleNeighborTarget, remaining);
   const targets = pending.slice(0, testMode ? 1 : requestedLimit);
   traceCommenter('neighborComment:cycle', {
     detected: newCandidates.length,
@@ -6493,7 +6473,10 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
       }
 
       const startedAt = Date.now();
-      const result = await processNeighborCommentWithTimeout(candidate, { testMode });
+      const result = await processNeighborCommentWithTimeout(candidate, {
+        testMode,
+        withSympathy: true,
+      });
       if (result.ok) posted += 1;
       if (result?.sympathy?.ok) sympathized += 1;
       else if (result.skipped) skipped += 1;
@@ -6547,7 +6530,7 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
   await _postCommenterAlarm({
     fromBot: 'blog-neighbor-commenter',
     alertLevel: failed >= 2 ? 3 : 2,
-    message: `이웃 댓글 ${posted}건 완료, 댓글 공감 ${sympathized}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 댓글 총 ${todayCount + posted}/${config.maxDaily}, 댓글공감 총 ${todaySympathyCount + sympathized})`,
+    message: `이웃 댓글 ${posted}건 완료, 댓글 공감 ${sympathized}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 댓글 총 ${todayCount + posted}/${config.maxDaily}, 댓글 공감 ${todayCommentSympathyCount + sympathized}/${config.commentSympathyMaxDaily})`,
     shouldSend: posted > 0 || failed > 0,
   });
 
@@ -6560,7 +6543,7 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
     failed,
     skipped,
     total: todayCount + posted,
-    sympathyTotal: todaySympathyCount + sympathized,
+    commentSympathyTotal: todayCommentSympathyCount + sympathized,
     cycleTarget: cycleNeighborTarget,
     trigger,
     limitOverride: Number(limitOverride || 0),
@@ -6614,6 +6597,9 @@ module.exports = {
     readNaverMonitorWsEndpoints,
     reconcileTimedOutNeighborComment,
     resolveNeighborCommentTimeouts,
+    getTodaySympathyCount,
+    getTodayCommentSympathyCount,
+    getTodayStandaloneSympathyCount,
     activateReplyMode,
   },
 };

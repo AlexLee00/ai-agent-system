@@ -35,7 +35,7 @@ function buildCommentStrategyReportFromRows({ learningEvents = [], ownComments =
 
   for (const event of learningEvents || []) {
     const outcome = event.outcome && typeof event.outcome === 'object' ? event.outcome : {};
-    add(event.type, event.source || 'learning', outcome.success !== false, outcome);
+    add(event.type, event.source || 'learning', outcome.success === true, outcome);
   }
   if (!learningEvents.length) {
     for (const row of ownComments || []) {
@@ -46,6 +46,8 @@ function buildCommentStrategyReportFromRows({ learningEvents = [], ownComments =
     for (const row of neighborComments || []) {
       add(row.source_type ? `neighbor:${row.source_type}` : 'neighbor_comment', 'neighbor', String(row.status || '') === 'posted', row.meta || {});
     }
+  }
+  if (learningEvents.length > 0 || (ownComments.length === 0 && neighborComments.length === 0)) {
     for (const row of actionRows || []) {
       if (!['reply', 'neighbor_comment'].includes(String(row.action_type || ''))) continue;
       const meta = row.meta && typeof row.meta === 'object' ? row.meta : {};
@@ -98,16 +100,26 @@ function buildCommentStrategyReportFromRows({ learningEvents = [], ownComments =
 async function fetchCommentStrategyRows({ days = 7, pool = pgPool } = {}) {
   const learningExists = await tableExists(pool, 'blog.comment_learning_events');
   if (learningExists) {
-    const learningEvents = await pool.query('blog', `
-      SELECT source, type, strategy_version, outcome, metadata, reply_posted_at
-      FROM blog.comment_learning_events
-      WHERE created_at >= NOW() - ($1::text || ' days')::interval
-      ORDER BY created_at DESC
-      LIMIT 1000
-    `, [Math.max(1, Number(days || 7))]);
-    return { learningEvents, ownComments: [], neighborComments: [], actionRows: [], source: 'comment_learning_events' };
+    const [learningEvents, actionRows] = await Promise.all([
+      pool.query('blog', `
+        SELECT source, type, strategy_version, outcome, metadata, reply_posted_at
+        FROM blog.comment_learning_events
+        WHERE created_at >= NOW() - ($1::text || ' days')::interval
+        ORDER BY created_at DESC
+        LIMIT 1000
+      `, [Math.max(1, Number(days || 7))]),
+      pool.query('blog', `
+        SELECT action_type, success, meta, executed_at
+        FROM blog.comment_actions
+        WHERE executed_at >= NOW() - ($1::text || ' days')::interval
+          AND success = false
+          AND action_type IN ('reply', 'neighbor_comment')
+        LIMIT 1000
+      `, [Math.max(1, Number(days || 7))]),
+    ]);
+    return { learningEvents, ownComments: [], neighborComments: [], actionRows, source: 'comment_learning_events_plus_failures' };
   }
-  const [ownComments, neighborComments, actionRows] = await Promise.all([
+  const [ownComments, neighborComments] = await Promise.all([
     pool.query('blog', `
       SELECT status, meta, reply_at, detected_at
       FROM blog.comments
@@ -120,14 +132,8 @@ async function fetchCommentStrategyRows({ days = 7, pool = pgPool } = {}) {
       WHERE created_at >= NOW() - ($1::text || ' days')::interval
       LIMIT 1000
     `, [Math.max(1, Number(days || 7))]),
-    pool.query('blog', `
-      SELECT action_type, success, meta, executed_at
-      FROM blog.comment_actions
-      WHERE executed_at >= NOW() - ($1::text || ' days')::interval
-      LIMIT 1000
-    `, [Math.max(1, Number(days || 7))]),
   ]);
-  return { learningEvents: [], ownComments, neighborComments, actionRows, source: 'fallback_existing_tables' };
+  return { learningEvents: [], ownComments, neighborComments, actionRows: [], source: 'fallback_existing_tables' };
 }
 
 async function persistCommentStrategyProposal(report = {}, { pool = pgPool } = {}) {

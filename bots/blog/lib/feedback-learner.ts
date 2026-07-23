@@ -225,18 +225,18 @@ async function aggregateOperationalPatterns(days = 30) {
 
     if (topCategory) {
       patterns.push({
-        type: 'ops_high_performance_category',
+        type: 'ops_category_saturation',
         count: Number(topCategory[1] || 0),
-        recentSummaries: [`최근 운영 포스트에서 ${topCategory[0]} 카테고리 비중이 높습니다.`, ...summaries.slice(0, 2)],
+        recentSummaries: [`최근 운영 포스트에서 ${topCategory[0]} 카테고리 비중이 높아 다음 발행에서는 분산이 필요합니다.`, ...summaries.slice(0, 2)],
         source: 'operational_feedback',
       });
     }
 
     if (topPattern) {
       patterns.push({
-        type: 'ops_high_performance_title_pattern',
+        type: 'ops_title_pattern_saturation',
         count: Number(topPattern[1] || 0),
-        recentSummaries: [`최근 운영 포스트에서 ${topPattern[0]} 제목 패턴 비중이 높습니다.`, ...summaries.slice(0, 2)],
+        recentSummaries: [`최근 운영 포스트에서 ${topPattern[0]} 제목 패턴 비중이 높아 반복 억제가 필요합니다.`, ...summaries.slice(0, 2)],
         source: 'operational_feedback',
       });
     }
@@ -329,12 +329,13 @@ async function loadCategoryPerformanceWeights() {
     const rows = await pgPool.query('blog', `
       SELECT
         category,
-        ROUND(AVG(COALESCE(view_count, 0))::numeric, 1) AS avg_views,
+        ROUND(AVG(COALESCE(views, 0))::numeric, 1) AS avg_views,
         COUNT(*) AS post_count
       FROM blog.posts
-      WHERE type = 'general'
+      WHERE post_type = 'general'
         AND status = 'published'
         AND publish_date >= CURRENT_DATE - INTERVAL '30 days'
+        AND publish_date <= CURRENT_DATE - INTERVAL '7 days'
         AND category IS NOT NULL
       GROUP BY category
       HAVING COUNT(*) >= 2

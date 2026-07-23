@@ -64,23 +64,8 @@ function buildOriginalDraftContent(post) {
 }
 
 async function ensureMasterEditAnalysisTable(pool = pgPool) {
-  await pool.query('blog', `
-    CREATE TABLE IF NOT EXISTS blog.master_edit_analysis (
-      id              SERIAL PRIMARY KEY,
-      post_id         INTEGER NOT NULL,
-      analyzed_at     TIMESTAMPTZ DEFAULT NOW(),
-      title_changed   BOOLEAN,
-      title_sim       NUMERIC(4,2),
-      added_ratio     NUMERIC(4,2),
-      removed_ratio   NUMERIC(4,2),
-      change_rate     NUMERIC(4,2),
-      primary_type    TEXT,
-      sub_types       TEXT[],
-      pattern_summary TEXT,
-      preference_rule TEXT,
-      raw_diff        JSONB
-    )
-  `);
+  const rows = await pool.query('blog', "SELECT to_regclass('blog.master_edit_analysis') AS regclass");
+  return Boolean(rows?.[0]?.regclass);
 }
 
 // ─────────────────────────── Phase 1: 발행 검출 ──────────────────────────────
@@ -94,9 +79,11 @@ async function detectPublishedDrafts(options = {}) {
   const pool = options.pgPool || pgPool;
   try {
     const cutoff = kst.daysAgoStr(days);
-    await ensureMasterEditAnalysisTable(pool).catch((err) => {
+    const schemaReady = await ensureMasterEditAnalysisTable(pool).catch((err) => {
       console.log('[master-edit-analyzer] 분석 테이블 준비 실패:', err.message);
+      return false;
     });
+    if (!schemaReady) return [];
     const rows = await pool.query(
       'blog',
       `SELECT
@@ -114,14 +101,18 @@ async function detectPublishedDrafts(options = {}) {
          fcc.checked_at AS final_checked_at
        FROM blog.posts p
        JOIN blog.final_content_checks fcc ON fcc.post_id = p.id
-       LEFT JOIN blog.master_edit_analysis mea ON mea.post_id = p.id
        WHERE p.status = 'published'
          AND COALESCE(p.naver_url, '') <> ''
          AND fcc.changed = TRUE
          AND fcc.status = 'changed'
          AND COALESCE(fcc.final_content_text, '') <> ''
          AND DATE(COALESCE(fcc.checked_at, p.publish_date::timestamptz)) >= $1
-         AND mea.id IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+           FROM blog.master_edit_analysis mea
+           WHERE mea.post_id = p.id
+             AND mea.analyzed_at >= fcc.checked_at
+         )
        ORDER BY COALESCE(fcc.checked_at, p.publish_date::timestamptz) DESC, p.id DESC
        LIMIT 20`,
       [cutoff],
@@ -226,8 +217,8 @@ async function classifyEditPattern(originalTitle, modifiedTitle, wordDiff) {
       callerTeam: 'blog',
       agent: 'master-edit-analyzer',
       selectorKey: 'blog.master.analyze',
-      system: '편집 패턴 분석가. JSON만 출력.',
-      user: prompt,
+      systemPrompt: '편집 패턴 분석가. JSON만 출력.',
+      prompt,
       maxTokens: 200,
     });
 
@@ -255,7 +246,7 @@ async function classifyEditPattern(originalTitle, modifiedTitle, wordDiff) {
 async function saveDiffAnalysis(postId, titleDiff, wordDiff, editPattern, options = {}) {
   const pool = options.pgPool || pgPool;
   try {
-    await ensureMasterEditAnalysisTable(pool);
+    if (!await ensureMasterEditAnalysisTable(pool)) return false;
 
     await pool.query(
       'blog',
@@ -299,16 +290,23 @@ async function saveDiffAnalysis(postId, titleDiff, wordDiff, editPattern, option
  */
 async function buildMasterStyleProfile(options = {}) {
   const limit = options.limit || 100;
+  const postType = String(options.postType || '').trim() || null;
+  const category = String(options.category || '').trim() || null;
   const pool = options.pgPool || pgPool;
   try {
-    await ensureMasterEditAnalysisTable(pool);
+    if (!await ensureMasterEditAnalysisTable(pool)) {
+      return { rules: [], summary: '분석 테이블 미적용', sample_count: 0 };
+    }
     const rows = await pool.query(
       'blog',
-      `SELECT primary_type, preference_rule, title_changed, change_rate
-       FROM blog.master_edit_analysis
-       ORDER BY analyzed_at DESC
-       LIMIT $1`,
-      [limit],
+      `SELECT mea.primary_type, mea.preference_rule, mea.title_changed, mea.change_rate
+       FROM blog.master_edit_analysis mea
+       JOIN blog.posts p ON p.id = mea.post_id
+       WHERE ($1::text IS NULL OR p.post_type = $1)
+         AND ($2::text IS NULL OR p.category = $2)
+       ORDER BY mea.analyzed_at DESC
+       LIMIT $3`,
+      [postType, category, limit],
     );
 
     if (!rows || rows.length === 0) {
@@ -346,6 +344,8 @@ async function buildMasterStyleProfile(options = {}) {
       titleChangeRate,
       summary,
       sample_count: rows.length,
+      post_type: postType,
+      category,
     };
   } catch (err) {
     console.log('[master-edit-analyzer] 스타일 프로파일 빌드 실패:', err.message);

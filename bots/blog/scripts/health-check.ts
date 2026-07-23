@@ -37,6 +37,7 @@ const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('..
 const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 const { readNaverUrlBackfillTelemetry } = require('../lib/naver-url-backfill-telemetry.ts');
 const { classifyEngagementFailure, summarizeEngagementFailure } = require('../lib/engagement-failure.ts');
+const { isBlogMarketingRetired, isBlogSnsPublishingRetired } = require('../lib/retirement-policy.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -45,7 +46,7 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
   domain: 'blog health',
 });
 const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
-const SOCIAL_MEDIA_ENABLED = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
+const SOCIAL_MEDIA_ENABLED = !isBlogSnsPublishingRetired() && process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
 const IMAGE_PROVIDER = String(process.env.BLOG_IMAGE_PROVIDER || 'drawthings').toLowerCase();
 const IMAGE_GEN_ENABLED = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
 const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860');
@@ -375,6 +376,9 @@ async function checkBookCatalogHealth() {
 }
 
 async function checkFacebookPublishHealth() {
+  if (isBlogSnsPublishingRetired()) {
+    return { ok: true, retired: true, detail: 'facebook publishing retired', latest: null };
+  }
   try {
     const readiness = await checkFacebookPublishReadiness().catch(() => null);
     const rows = await pgPool.query('blog', `
@@ -484,6 +488,9 @@ async function checkFacebookPublishHealth() {
 }
 
 async function checkInstagramPublishHealth() {
+  if (isBlogSnsPublishingRetired()) {
+    return { ok: true, retired: true, detail: 'instagram publishing retired', latest: null };
+  }
   try {
     const rows = await pgPool.query('blog', `
       SELECT status, dry_run, error_msg, post_title, created_at
@@ -795,6 +802,9 @@ async function checkEngagementAutomationHealth() {
 }
 
 async function checkMarketingExpansionHealth() {
+  if (isBlogMarketingRetired()) {
+    return { ok: true, retired: true, detail: 'blog marketing retired' };
+  }
   try {
     const latestDigestRun = readMarketingDigestTelemetry();
     const marketingPriority = getDoctorPriority(MARKETING_DOCTOR_COMMAND, {
@@ -1079,6 +1089,9 @@ async function main() {
       await rememberHealthEvent(facebookPublishKey, 'recovery', recoveryMsg, 1);
       hsm.clearAlert(state, facebookPublishKey);
     }
+  } else if (isBlogSnsPublishingRetired()) {
+    hsm.clearAlert(state, 'instagram-publish:recent-failure');
+    hsm.clearAlert(state, 'facebook-publish:permission');
   }
 
   const engagementAutomation = await checkEngagementAutomationHealth();
@@ -1108,6 +1121,8 @@ async function main() {
         msg: `⚠️ [블로그 헬스] marketing watch\n${marketingExpansion.detail}`,
       });
     }
+  } else if (marketingExpansion.retired) {
+    hsm.clearAlert(state, marketingExpansionKey);
   } else if (state[marketingExpansionKey]) {
     const recoveryMsg = `✅ [블로그 헬스] marketing watch 회복\n${marketingExpansion.detail}`;
     await notify(recoveryMsg, 1);

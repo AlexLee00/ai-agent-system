@@ -133,11 +133,11 @@ const DEFAULTS = {
   neighborCommenter: {
     enabled: false,
     blogId: 'cafe_library',
-    maxDaily: 20,
+    maxDaily: 30,
     activeStartHour: 9,
     activeEndHour: 21,
     maxCollectPerCycle: 20,
-    maxProcessPerCycle: 20,
+    maxProcessPerCycle: 1,
     adaptiveEnabled: true,
     adaptiveMinGapToBoost: 2,
     adaptiveBoostCap: 12,

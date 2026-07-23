@@ -4,16 +4,14 @@
 
 const { diagnoseWeeklyPerformance } = require('../lib/performance-diagnostician.ts');
 const { evolveStrategy } = require('../lib/strategy-evolver.ts');
-const { buildMarketingDigest } = require('../lib/marketing-digest.ts');
-const { analyzeMarketingToRevenue } = require('../lib/marketing-revenue-correlation.ts');
 const { trackWeeklyAutonomy } = require('../lib/autonomy-tracker.ts');
 const { aggregatePatterns } = require('../lib/feedback-learner.ts');
-const { summarizeRecentCrankDiagnosisEvents } = require('../lib/crank-diagnoser.ts');
+const { runCrankDiagnoser, summarizeRecentCrankDiagnosisEvents } = require('../lib/crank-diagnoser.ts');
+const { isoWeekKey } = require('../lib/writing-learnings.ts');
 const { buildWriterModelCrankComparisonFromDb } = require('../lib/writer-model-crank-report.ts');
 const { runCommentStrategyEvolver } = require('../lib/comment-strategy-evolver.ts');
 const { summarizeRecentExternalTrendLearnings } = require('../lib/external-trend-learnings.ts');
-const { getCrosspostStats } = require('../../social-media/instagram/lib/insta-crosspost.ts');
-const { getAssetMemorySnapshot } = require('../lib/omnichannel/asset-memory.ts');
+const { buildRetiredFeatureResult } = require('../lib/retirement-policy.ts');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const { publishToWebhook, buildReportEvent, renderReportEvent } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
@@ -45,7 +43,7 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
     );
   }
 
-  if (marketingDigest) {
+  if (marketingDigest && !marketingDigest.retired) {
     lines.push(
       `마케팅 상태: ${marketingDigest?.health?.status || 'unknown'} / 매출 영향 ${(Number(marketingDigest?.revenueCorrelation?.revenueImpactPct || 0) * 100).toFixed(1)}%`
     );
@@ -55,15 +53,6 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
     lines.push(
       `매출 영향: ${(Number(revenueCorrelation?.revenueImpactPct || 0) * 100).toFixed(1)}% / 고조회수 다음날 ${Number(revenueCorrelation?.highViewRevenueAfter || 0).toFixed(0)}`
     );
-  }
-
-  // 인스타 크로스포스트 통계
-  if (crosspostStats && crosspostStats.total > 0) {
-    const rate = crosspostStats.successRate !== null ? `${crosspostStats.successRate}%` : 'n/a';
-    const tokenWarn = crosspostStats.tokenErrorCount > 0 ? ` ⚠️ 토큰오류 ${crosspostStats.tokenErrorCount}회` : '';
-    lines.push(`인스타 크로스포스트: ${crosspostStats.okCount}건 성공 / ${crosspostStats.failCount}건 실패 (성공률 ${rate})${tokenWarn}`);
-  } else if (crosspostStats) {
-    lines.push('인스타 크로스포스트: 이번 주 기록 없음');
   }
 
   if (Array.isArray(diagnosis.recommendations) && diagnosis.recommendations.length) {
@@ -105,25 +94,6 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
     lines.push('', 'Writer model crank 비교:');
     writerModelCrankComparison.models.slice(0, 5).forEach((item) => {
       lines.push(`- ${item.writerModel}: sample ${item.sample}, avg ${item.avgOverall ?? 'n/a'}, ${item.verdict}`);
-    });
-  }
-
-  const winners = Array.isArray(assetMemory?.winners) ? assetMemory.winners : [];
-  const losers = Array.isArray(assetMemory?.losers) ? assetMemory.losers : [];
-  const saturated = Array.isArray(assetMemory?.saturation)
-    ? assetMemory.saturation.filter((item) => item.saturated)
-    : [];
-
-  if (winners.length || losers.length || saturated.length) {
-    lines.push('', 'Creative Memory:');
-    winners.slice(0, 2).forEach((item) => {
-      lines.push(`- winner/${item.platform}: success ${Math.round(Number(item.successRate || 0) * 100)}% / quality ${Number(item.avgQuality || 0).toFixed(1)}`);
-    });
-    losers.slice(0, 2).forEach((item) => {
-      lines.push(`- loser/${item.platform}: success ${Math.round(Number(item.successRate || 0) * 100)}% / quality ${Number(item.avgQuality || 0).toFixed(1)}`);
-    });
-    saturated.slice(0, 2).forEach((item) => {
-      lines.push(`- saturation/${item.platform}: ${(Number(item.saturationRatio || 0) * 100).toFixed(1)}% top format 집중`);
     });
   }
 
@@ -234,28 +204,31 @@ async function main() {
     console.log('[블로][dry-run] 전략 파일 저장 없이 진단만 실행');
   }
 
-  const [diagnosis, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, crosspostStats, assetMemory, crankLearningSummary, commentStrategyReport, externalTrendLearningSummary, writerModelCrankComparison] = await Promise.all([
+  const crankDiagnosisRun = await runCrankDiagnoser({
+    limit: 10,
+    titleLimit: 60,
+    days: 30,
+    write: !dryRun,
+    runId: `blog-crank-${isoWeekKey(new Date())}`,
+  }).catch((error) => ({ ok: false, error: String(error?.message || error) }));
+  const [diagnosis, autonomy, feedbackPatterns, crankLearningSummary, commentStrategyReport, externalTrendLearningSummary, writerModelCrankComparison] = await Promise.all([
     diagnoseWeeklyPerformance(7),
-    buildMarketingDigest({
-      revenueWindow: 14,
-      diagnosisWindow: 7,
-      autonomyWindow: 14,
-      snapshotWindow: 7,
-    }).catch(() => null),
-    trackWeeklyAutonomy().catch(() => null),
-    analyzeMarketingToRevenue(14).catch(() => null),
+    trackWeeklyAutonomy({ write: !dryRun }).catch(() => null),
     aggregatePatterns(30).catch(() => []),
-    getCrosspostStats(7).catch(() => null),
-    getAssetMemorySnapshot({ laneDays: 28, saturationDays: 14 }).catch(() => null),
     summarizeRecentCrankDiagnosisEvents({ days: 30, limit: 5 }).catch(() => []),
     runCommentStrategyEvolver({ days: 7, write: false }).catch(() => null),
     summarizeRecentExternalTrendLearnings({ days: 7, limit: 200 }).catch(() => null),
     buildWriterModelCrankComparisonFromDb({ days: 30, limit: 300 }).catch(() => null),
   ]);
-  const evolution = await evolveStrategy(diagnosis, { dryRun, marketingDigest });
+  const marketingDigest = buildRetiredFeatureResult('blog-marketing');
+  const revenueCorrelation = null;
+  const crosspostStats = null;
+  const assetMemory = null;
+  const evolution = await evolveStrategy(diagnosis, { dryRun, marketingDigest: null });
 
   const result = {
     dryRun,
+    crankDiagnosisRun,
     diagnosis,
     marketingDigest,
     autonomy,

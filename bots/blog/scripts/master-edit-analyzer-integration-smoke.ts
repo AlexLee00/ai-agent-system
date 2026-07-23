@@ -96,8 +96,8 @@ function makeAnalyzerPool(candidates: AnyRecord[] = [], styleRows: AnyRecord[] =
     state,
     async query(schema: string, sql: string, params: any[] = []) {
       const text = String(sql);
-      if (text.includes('CREATE TABLE IF NOT EXISTS blog.master_edit_analysis')) {
-        return [];
+      if (text.includes("to_regclass('blog.master_edit_analysis')")) {
+        return [{ regclass: 'blog.master_edit_analysis' }];
       }
       if (text.includes('FROM blog.posts p') && text.includes('JOIN blog.final_content_checks')) {
         state.candidateSelectCount += 1;
@@ -128,7 +128,7 @@ function makeAnalyzerPool(candidates: AnyRecord[] = [], styleRows: AnyRecord[] =
       if (text.includes('UPDATE blog.posts')) {
         return [];
       }
-      if (text.includes('SELECT primary_type, preference_rule')) {
+      if (text.includes('SELECT mea.primary_type, mea.preference_rule')) {
         if (styleRows.length > 0) return styleRows;
         return state.insertedAnalyses.map((row: AnyRecord) => ({
           primary_type: row.primaryType,

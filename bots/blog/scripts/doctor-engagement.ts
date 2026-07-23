@@ -15,6 +15,7 @@ const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-
 const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 const { getEngagementOwners, getEngagementOwnerByArea } = require('../lib/engagement-ownership.ts');
 const { classifyEngagementFailure, summarizeEngagementFailure } = require('../lib/engagement-failure.ts');
+const { BLOG_ENGAGEMENT_POLICY } = require('../lib/engagement-policy.ts');
 
   const runtimeConfig = getBlogHealthRuntimeConfig();
   const neighborRuntimeConfig = getBlogNeighborCommenterConfig();
@@ -181,7 +182,8 @@ function buildTargetGapDetails(targets = {}) {
   const entries = [
     ['replies', targets?.replies],
     ['neighbor', targets?.neighborComments],
-    ['sympathy', targets?.sympathies],
+    ['comment_sympathy', targets?.commentSympathies],
+    ['standalone_sympathy', targets?.standaloneSympathies],
   ];
   const details = [];
   for (const [label, item] of entries) {
@@ -216,7 +218,9 @@ function getGapActionCommand(label = '') {
       return `node ${path.join(BLOG_ROOT, 'scripts/run-commenter.ts')}`;
     case 'neighbor':
       return `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')}`;
-    case 'sympathy':
+    case 'comment_sympathy':
+      return `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-commenter.ts')}`;
+    case 'standalone_sympathy':
       return `node ${path.join(BLOG_ROOT, 'scripts/run-neighbor-sympathy.ts')}`;
     default:
       return `npm --prefix ${BLOG_ROOT} run doctor:engagement -- --json`;
@@ -486,12 +490,12 @@ async function getReplyWorkloadStatus(baseline = null) {
 }
 
 async function getNeighborWorkloadStatus(baseline = null) {
-  const createdSinceClause = buildSinceClause('created_at', baseline);
+  const createdSinceClause = buildSinceClause('COALESCE(posted_at, created_at)', baseline);
   try {
     const rows = await pgPool.query('blog', `
       SELECT status, COUNT(*)::int AS cnt
       FROM blog.neighbor_comments
-      WHERE timezone('Asia/Seoul', created_at)::date = timezone('Asia/Seoul', now())::date
+      WHERE timezone('Asia/Seoul', CASE WHEN status = 'posted' THEN posted_at ELSE created_at END)::date = timezone('Asia/Seoul', now())::date
         ${createdSinceClause}
       GROUP BY 1
     `);
@@ -615,7 +619,7 @@ async function getCourtesyReflectionRecheck(baseline = null) {
 
 async function getExposureSignal(baseline = null) {
   const commentSinceClause = buildSinceClause('detected_at', baseline);
-  const neighborSinceClause = buildSinceClause('created_at', baseline);
+  const neighborSinceClause = buildSinceClause('COALESCE(posted_at, created_at)', baseline);
   try {
     const rows = await pgPool.query('blog', `
       WITH days AS (
@@ -637,10 +641,11 @@ async function getExposureSignal(baseline = null) {
       ),
       neighbor AS (
         SELECT
-          timezone('Asia/Seoul', created_at)::date AS day,
-          COUNT(*) FILTER (WHERE status = 'posted')::int AS neighbor_posted
+          timezone('Asia/Seoul', posted_at)::date AS day,
+          COUNT(*)::int AS neighbor_posted
         FROM blog.neighbor_comments
-        WHERE created_at >= now() - interval '5 days'
+        WHERE status = 'posted'
+          AND posted_at >= now() - interval '5 days'
           ${neighborSinceClause}
         GROUP BY 1
       )
@@ -1167,22 +1172,31 @@ async function main() {
     replyConfig.activeEndHour || 21,
   );
   const neighborPlan = calcExpectedByWindow(
-    resolveExecutionTarget('neighborCommentTargetPerCycle', strategy, neighborConfig.maxDaily || 20),
+    BLOG_ENGAGEMENT_POLICY.neighborCommentsPerDay,
     neighborConfig.activeStartHour || 9,
     neighborConfig.activeEndHour || 21,
   );
-  const sympathyPlan = calcExpectedByWindow(
-    resolveExecutionTarget('sympathyTargetPerCycle', strategy, neighborConfig.maxDaily || 20),
+  const commentSympathyPlan = calcExpectedByWindow(
+    BLOG_ENGAGEMENT_POLICY.commentSympathiesPerDay,
     neighborConfig.activeStartHour || 9,
     neighborConfig.activeEndHour || 21,
   );
+  const standaloneSympathyPlan = calcExpectedByWindow(
+    BLOG_ENGAGEMENT_POLICY.standaloneSympathiesPerDay,
+    neighborConfig.activeStartHour || 9,
+    neighborConfig.activeEndHour || 21,
+  );
+  const sympathyPlan = {
+    active: commentSympathyPlan.active || standaloneSympathyPlan.active,
+    target: commentSympathyPlan.target + standaloneSympathyPlan.target,
+    expectedNow: commentSympathyPlan.expectedNow + standaloneSympathyPlan.expectedNow,
+  };
 
   const replySuccessCount = Number(aggregateMap.get('reply:ok') || 0);
   const neighborCommentSuccessCount = Number(aggregateMap.get('neighbor_comment:ok') || 0);
-  const sympathySuccessCount =
-    Number(aggregateMap.get('neighbor_sympathy:ok') || 0) +
-    Number(aggregateMap.get('neighbor_comment_sympathy:ok') || 0) +
-    Number(aggregateMap.get('comment_post_sympathy:ok') || 0);
+  const commentSympathySuccessCount = Number(aggregateMap.get('neighbor_comment_sympathy:ok') || 0);
+  const standaloneSympathySuccessCount = Number(aggregateMap.get('neighbor_sympathy:ok') || 0);
+  const sympathySuccessCount = commentSympathySuccessCount + standaloneSympathySuccessCount;
   const sympathyModuleUnavailableSkips = Number(aggregateMap.get('neighbor_sympathy_skip:ok') || 0);
 
   const targetGaps = [];
@@ -1192,14 +1206,19 @@ async function main() {
   if (neighborPlan.active && neighborCommentSuccessCount < neighborPlan.expectedNow) {
     targetGaps.push(`neighbor ${neighborCommentSuccessCount}/${neighborPlan.expectedNow}`);
   }
-  if (sympathyPlan.active && sympathySuccessCount < sympathyPlan.expectedNow) {
-    targetGaps.push(`sympathy ${sympathySuccessCount}/${sympathyPlan.expectedNow}`);
+  if (commentSympathyPlan.active && commentSympathySuccessCount < commentSympathyPlan.expectedNow) {
+    targetGaps.push(`comment_sympathy ${commentSympathySuccessCount}/${commentSympathyPlan.expectedNow}`);
+  }
+  if (standaloneSympathyPlan.active && standaloneSympathySuccessCount < standaloneSympathyPlan.expectedNow) {
+    targetGaps.push(`standalone_sympathy ${standaloneSympathySuccessCount}/${standaloneSympathyPlan.expectedNow}`);
   }
 
   const targets = {
     replies: { success: replySuccessCount, target: replyPlan.target, expectedNow: replyPlan.expectedNow, active: replyPlan.active },
     neighborComments: { success: neighborCommentSuccessCount, target: neighborPlan.target, expectedNow: neighborPlan.expectedNow, active: neighborPlan.active },
     sympathies: { success: sympathySuccessCount, target: sympathyPlan.target, expectedNow: sympathyPlan.expectedNow, active: sympathyPlan.active },
+    commentSympathies: { success: commentSympathySuccessCount, target: commentSympathyPlan.target, expectedNow: commentSympathyPlan.expectedNow, active: commentSympathyPlan.active },
+    standaloneSympathies: { success: standaloneSympathySuccessCount, target: standaloneSympathyPlan.target, expectedNow: standaloneSympathyPlan.expectedNow, active: standaloneSympathyPlan.active },
   };
   const targetGapDetails = buildTargetGapDetails(targets);
   const primaryGap = targetGapDetails[0] || null;
@@ -1207,7 +1226,7 @@ async function main() {
   const adaptiveNeighborCadence = buildAdaptiveNeighborCadence({
     replySuccess: replySuccessCount,
     neighborSuccess: neighborCommentSuccessCount,
-    sympathySuccess: sympathySuccessCount,
+    sympathySuccess: commentSympathySuccessCount,
     replyPlan,
     neighborPlan,
     adaptiveEnabled: neighborConfig.adaptiveEnabled !== false,

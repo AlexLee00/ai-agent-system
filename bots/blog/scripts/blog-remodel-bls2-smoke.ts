@@ -67,10 +67,13 @@ async function main() {
       { status: 'posted', source_type: 'commenter_network', meta: {} },
       { status: 'skipped', source_type: 'commenter_network', meta: {} },
     ],
-    actionRows: [],
+    actionRows: [
+      { action_type: 'reply', success: true, meta: { classification: { type: '질문' } } },
+    ],
   }, { weekKey: '2026-W27', minSamples: 2, maxOtherRatio: 0.25, minSuccessRate: 0.8 });
   assert.equal(report.shadowOnly, true);
   assert.equal(report.liveMutation, false);
+  assert.equal(report.totalEvents, 7, 'fallback canonical rows must not be double-counted by action telemetry');
   assert.ok(report.proposals.length >= 1);
   assert.ok(report.vaultContribution?.meta?.libraryCoords?.validation_state === 'unverified');
 

@@ -322,7 +322,7 @@ async function getRecentTitles30d(tomorrowDate) {
     const cutoffStr = cutoffDate.toISOString().slice(0, 10);
     const rows = await pgPool.query('blog',
       `SELECT title FROM blog.posts
-       WHERE type IN ('general', 'lecture')
+       WHERE post_type IN ('general', 'lecture')
          AND DATE(publish_date) >= $1
          AND DATE(publish_date) <= $2
          AND COALESCE(status, '') NOT IN ('failed', 'error', 'archived')

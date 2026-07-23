@@ -23,21 +23,23 @@ defmodule TeamJay.Blog.StatusSnapshot do
       execution_monitor: safe_status(Blog.ExecutionMonitor),
       alert_relay: safe_status(Blog.AlertRelay),
       feedback: safe_status(Blog.Feedback),
-      social_relay: safe_status(Blog.SocialRelay),
-      instagram_agent: safe_status(Blog.InstagramAgent),
-      instagram_executor: safe_status(Blog.InstagramExecutor),
-      instagram_runner: safe_status(Blog.InstagramRunner),
-      facebook_agent: safe_status(Blog.FacebookAgent),
-      facebook_executor: safe_status(Blog.FacebookExecutor),
-      facebook_runner: safe_status(Blog.FacebookRunner),
+      social_relay: retired_status(),
+      instagram_agent: retired_status(),
+      instagram_executor: retired_status(),
+      instagram_runner: retired_status(),
+      facebook_agent: retired_status(),
+      facebook_executor: retired_status(),
+      facebook_runner: retired_status(),
       naver_blog_agent: safe_status(Blog.NaverBlogAgent),
       naver_blog_executor: safe_status(Blog.NaverBlogExecutor),
       naver_blog_runner: safe_status(Blog.NaverBlogRunner),
-      social_execution_monitor: safe_status(Blog.SocialExecutionMonitor),
-      social_alert_relay: safe_status(Blog.SocialAlertRelay)
+      social_execution_monitor: retired_status(),
+      social_alert_relay: retired_status()
     }
     |> normalize()
   end
+
+  defp retired_status, do: %{status: :retired, reason: :blog_naver_only}
 
   defp safe_status(module) do
     if Code.ensure_loaded?(module) and function_exported?(module, :status, 0) do

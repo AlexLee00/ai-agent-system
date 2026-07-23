@@ -175,16 +175,17 @@ function buildCrankDiagnosisLessons(rows = [], options = {}) {
       lessonSource: 'rule',
     });
   }
-  const titleRows = Array.isArray(options.titleRows) ? options.titleRows : rows;
+  const titleRows = (Array.isArray(options.titleRows) ? options.titleRows : rows)
+    .filter((row) => String(row?.post_type || row?.postType || 'general') !== 'lecture');
   const titleSummary = buildTitlePatternSummary(titleRows, options);
   if (titleSummary.lesson) {
     lessons.push({
       post_id: null,
       postId: null,
       title: 'recent title pattern diversity',
-      category: 'all',
-      postType: null,
-      writer: 'all',
+      category: 'general',
+      postType: 'general',
+      writer: 'gems',
       axis: 'title_diversity',
       score: Math.round((titleSummary.top?.ratio || 0) * 100),
       overall: null,
@@ -242,6 +243,7 @@ async function fetchRecentTitleRows({ titleLimit = DEFAULT_TITLE_LIMIT, days = 3
     FROM blog.posts p
     WHERE COALESCE(p.publish_date::timestamptz, p.created_at) >= CURRENT_DATE - ($1::text || ' days')::interval
       AND COALESCE(p.title, '') <> ''
+      AND p.post_type = 'general'
     ORDER BY COALESCE(p.publish_date::timestamptz, p.created_at) DESC, p.id DESC
     LIMIT $2
   `, [
@@ -268,34 +270,65 @@ function buildCrankDiagnosisEventPayload(lesson = {}) {
 
 async function recordCrankDiagnosisEvents(lessons = [], { pool = pgPool, runId = null } = {}) {
   const id = runId || crypto.randomUUID();
-  const session = await pool.run('blog', `
-    INSERT INTO blog.ai_feedback_sessions (
-      company_id, user_id, source_type, source_ref_type, source_ref_id,
-      flow_code, action_code, proposal_id, ai_input_payload, ai_output_type,
-      original_snapshot_json, feedback_status
-    )
-    VALUES (
-      'blog', 1, 'blog_crank_diagnoser', 'crank_score_batch', $1,
-      'blog_remodel_bls1', 'diagnose_crank_lessons', $1, $2::jsonb,
-      'crank_diagnosis_lessons', $3::jsonb, 'committed'
-    )
-    RETURNING id
-  `, [
-    id,
-    JSON.stringify({ format_version: WRITING_LEARNINGS_FORMAT_VERSION, lesson_count: lessons.length }),
-    JSON.stringify({ lessons: lessons.map(buildCrankDiagnosisEventPayload) }),
-  ]);
-  const sessionId = session?.rows?.[0]?.id || session?.[0]?.id;
-  for (const lesson of lessons) {
-    const payload = buildCrankDiagnosisEventPayload(lesson);
-    await pool.run('blog', `
-      INSERT INTO blog.ai_feedback_events (
-        feedback_session_id, event_type, field_key, after_value_json, event_meta_json
+  const writeBatch = async ({ getOne, run }) => {
+    if (runId) {
+      const existing = await getOne(`
+      SELECT id
+      FROM blog.ai_feedback_sessions
+      WHERE source_type = 'blog_crank_diagnoser'
+        AND source_ref_id = $1
+      ORDER BY id DESC
+      LIMIT 1
+    `, [id]);
+      if (existing?.id) {
+        return { ok: true, runId: id, sessionId: existing.id, inserted: 0, skipped: true, reason: 'already_recorded' };
+      }
+    }
+
+    const session = await run(`
+      INSERT INTO blog.ai_feedback_sessions (
+        company_id, user_id, source_type, source_ref_type, source_ref_id,
+        flow_code, action_code, proposal_id, ai_input_payload, ai_output_type,
+        original_snapshot_json, feedback_status
       )
-      VALUES ($1, 'crank_diagnosis', $2, $3::jsonb, $3::jsonb)
-    `, [sessionId, lesson.axis, JSON.stringify(payload)]);
+      VALUES (
+        'blog', 1, 'blog_crank_diagnoser', 'crank_score_batch', $1,
+        'blog_remodel_bls1', 'diagnose_crank_lessons', $1, $2::jsonb,
+        'crank_diagnosis_lessons', $3::jsonb, 'committed'
+      )
+      RETURNING id
+    `, [
+      id,
+      JSON.stringify({ format_version: WRITING_LEARNINGS_FORMAT_VERSION, lesson_count: lessons.length }),
+      JSON.stringify({ lessons: lessons.map(buildCrankDiagnosisEventPayload) }),
+    ]);
+    const sessionId = session?.rows?.[0]?.id || session?.[0]?.id;
+    for (const lesson of lessons) {
+      const payload = buildCrankDiagnosisEventPayload(lesson);
+      await run(`
+        INSERT INTO blog.ai_feedback_events (
+          feedback_session_id, event_type, field_key, after_value_json, event_meta_json
+        )
+        VALUES ($1, 'crank_diagnosis', $2, $3::jsonb, $3::jsonb)
+      `, [sessionId, lesson.axis, JSON.stringify(payload)]);
+    }
+    return { ok: true, runId: id, sessionId, inserted: lessons.length };
+  };
+
+  if (typeof pool.transaction === 'function') {
+    return pool.transaction('blog', async (client) => {
+      if (runId) await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [id]);
+      return writeBatch({
+        getOne: async (sql, params) => (await client.query(sql, params)).rows?.[0] || null,
+        run: (sql, params) => client.query(sql, params),
+      });
+    });
   }
-  return { ok: true, runId: id, sessionId, inserted: lessons.length };
+
+  return writeBatch({
+    getOne: (sql, params) => pool.get('blog', sql, params),
+    run: (sql, params) => pool.run('blog', sql, params),
+  });
 }
 
 async function summarizeRecentCrankDiagnosisEvents({ days = 30, limit = 5, pool = pgPool } = {}) {

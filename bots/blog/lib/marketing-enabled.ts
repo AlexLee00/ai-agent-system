@@ -1,15 +1,15 @@
 // @ts-nocheck
 'use strict';
 
+const { buildRetiredFeatureResult } = require('./retirement-policy.ts');
+
 function isBlogMarketingEnabled() {
-  return process.env.BLOG_MARKETING_ENABLED === 'true';
+  return false;
 }
 
 function buildMarketingDisabledResult(source = 'blog-marketing') {
   return {
-    ok: true,
-    skipped: true,
-    reason: 'blog_marketing_disabled',
+    ...buildRetiredFeatureResult(source),
     source,
     marketingEnabled: false,
     generatedAt: new Date().toISOString(),
@@ -17,7 +17,7 @@ function buildMarketingDisabledResult(source = 'blog-marketing') {
 }
 
 function logMarketingDisabled(source = 'blog-marketing') {
-  console.log(`[${source}] BLOG_MARKETING_ENABLED != true — 마케팅 경로 스킵`);
+  console.log(`[${source}] 블로그 마케팅 기능 은퇴 — 실행 경로 스킵`);
 }
 
 module.exports = {

@@ -40,6 +40,8 @@ type BlogPostRow = {
   content?: string;
   html_content?: string;
   naver_url: string;
+  previous_final_content_hash?: string;
+  previous_final_title?: string;
 };
 type ContentDiff = {
   changed: boolean;
@@ -357,7 +359,7 @@ function buildMasterEditVaultEntry({
   finalTitle: string;
   diff: ContentDiff;
 }): AnyRecord {
-  const fileHash = shortHash(`${post.id}:${diff.originalContentHash}:${diff.finalContentHash}`);
+  const fileHash = shortHash(`${post.id}:${originalTitle}:${finalTitle}:${diff.originalContentHash}:${diff.finalContentHash}`);
   const filePath = `library/blo/master_edit/${post.id}-${fileHash}`;
   const content = [
     `# Master edit diff: ${finalTitle || originalTitle || `post ${post.id}`}`,
@@ -560,7 +562,7 @@ async function selectFinalContentCandidates(pool: PoolLike, options: Partial<Col
     ? 'LEFT JOIN blog.final_content_checks fcc ON fcc.post_id = p.id'
     : '';
   const ledgerFilter = ledgerExists
-    ? 'AND fcc.post_id IS NULL'
+    ? "AND (fcc.post_id IS NULL OR fcc.checked_at < NOW() - INTERVAL '24 hours')"
     : '';
 
   const sql = `
@@ -572,6 +574,7 @@ async function selectFinalContentCandidates(pool: PoolLike, options: Partial<Col
       p.naver_url,
       p.publish_date,
       p.created_at
+      ${ledgerExists ? ', fcc.final_content_hash AS previous_final_content_hash, fcc.final_title AS previous_final_title' : ''}
     FROM blog.posts p
     ${ledgerJoin}
     WHERE p.status = 'published'
@@ -701,7 +704,13 @@ async function processFinalContentCandidate(
 
   const finalTitle = normalizeTitle(finalPost && finalPost.title) || originalTitle;
   const diff = computeContentDiff(originalContent, finalContent);
-  if (!diff.changed) {
+  const titleChanged = originalTitle !== finalTitle;
+  const unchangedSinceLastCheck = Boolean(
+    post.previous_final_content_hash
+    && post.previous_final_content_hash === diff.finalContentHash
+    && normalizeTitle(post.previous_final_title) === finalTitle
+  );
+  if (unchangedSinceLastCheck || (!diff.changed && !titleChanged)) {
     return {
       postId: post.id,
       naverUrl: post.naver_url,
@@ -709,9 +718,11 @@ async function processFinalContentCandidate(
       changed: false,
       originalContentHash: diff.originalContentHash,
       finalContentHash: diff.finalContentHash,
-      diffSummary: diff.diffSummary,
+      finalTitle,
+      finalContentText: finalContent,
+      diffSummary: unchangedSinceLastCheck ? 'no_new_final_change' : diff.diffSummary,
       vaultFilePath: null,
-      metadata: { originalTitle, finalTitle, metrics: diff.metrics }
+      metadata: { originalTitle, finalTitle, titleChanged, unchangedSinceLastCheck, metrics: diff.metrics }
     };
   }
 
@@ -725,11 +736,14 @@ async function processFinalContentCandidate(
     finalContentHash: diff.finalContentHash,
     finalTitle,
     finalContentText: finalContent,
-    diffSummary: diff.diffSummary,
+    diffSummary: titleChanged && !diff.changed
+      ? `title_changed: ${originalTitle} -> ${finalTitle}`
+      : diff.diffSummary,
     vaultFilePath: vaultEntry.filePath,
     metadata: {
       originalTitle,
       finalTitle,
+      titleChanged,
       finalContentLength: finalContent.length,
       metrics: diff.metrics,
       addedSamples: diff.addedSamples,

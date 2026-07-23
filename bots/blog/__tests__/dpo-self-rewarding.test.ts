@@ -42,10 +42,10 @@ describe('marketing-dpo', () => {
     expect(dpo.isEnabled()).toBe(false);
   });
 
-  test('isEnabled() — true when set', () => {
+  test('isEnabled() — retired even when env is set', () => {
     process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
-    expect(dpo.isEnabled()).toBe(true);
+    expect(dpo.isEnabled()).toBe(false);
   });
 
   test('calcPostScore — 조회수/참여율/매출 모두 0이면 0', () => {

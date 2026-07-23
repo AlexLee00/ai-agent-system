@@ -39,6 +39,8 @@ const { readLatestBlogEvalCase } = require(path.join(env.PROJECT_ROOT, 'bots/blo
 const { readNaverUrlBackfillTelemetry } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/naver-url-backfill-telemetry.ts'));
 const { getEngagementOwners } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/engagement-ownership.ts'));
 const { classifyEngagementFailure, summarizeEngagementFailure } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/engagement-failure.ts'));
+const { BLOG_ENGAGEMENT_POLICY } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/engagement-policy.ts'));
+const { isBlogMarketingRetired, isBlogSnsPublishingRetired } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/retirement-policy.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -52,7 +54,7 @@ const runtimeConfig = getBlogHealthRuntimeConfig();
 const neighborRuntimeConfig = getBlogNeighborCommenterConfig();
 const DAILY_LOG_STALE_MS = Number(runtimeConfig.dailyLogStaleMs || (36 * 60 * 60 * 1000));
 const NODE_SERVER_HEALTH_URL = runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health';
-const SOCIAL_MEDIA_ENABLED = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
+const SOCIAL_MEDIA_ENABLED = !isBlogSnsPublishingRetired() && process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
 const IMAGE_PROVIDER = String(process.env.BLOG_IMAGE_PROVIDER || 'drawthings').toLowerCase();
 const IMAGE_GEN_ENABLED = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
 const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860');
@@ -372,6 +374,22 @@ function extractJsonObjectText(output = '') {
 }
 
 function buildDoctorPriority(command = '', label = 'doctor') {
+  if (
+    (command === SOCIAL_DOCTOR_COMMAND && isBlogSnsPublishingRetired())
+    || (command === MARKETING_DOCTOR_COMMAND && isBlogMarketingRetired())
+  ) {
+    return {
+      okCount: 1,
+      warnCount: 0,
+      ok: [`  ${label}: retired`],
+      warn: [],
+      primaryArea: 'clear',
+      primaryReason: 'retired',
+      nextCommand: '',
+      actionFocus: '',
+      actions: [],
+    };
+  }
   if (!command) {
     return {
       okCount: 0,
@@ -909,6 +927,19 @@ async function buildAutonomyHealth() {
 }
 
 async function buildInstagramHealth() {
+  if (isBlogSnsPublishingRetired()) {
+    return {
+      okCount: 1,
+      warnCount: 0,
+      ok: ['  instagram/facebook publishing: retired'],
+      warn: [],
+      retired: true,
+      needsRefresh: false,
+      critical: false,
+      hostReady: true,
+      autoRefresh: { checkedAt: null, mode: 'retired', ok: true, reason: 'retired', schedule: null },
+    };
+  }
   try {
     const config = await getInstagramConfig();
     const host = getInstagramImageHostConfig();
@@ -992,12 +1023,13 @@ async function buildSocialAutomationHealth() {
       okCount: 4,
       warnCount: 0,
       ok: [
-        '  social automation: disabled (BLOG_SOCIAL_MEDIA_ENABLED != true)',
+        `  social automation: ${isBlogSnsPublishingRetired() ? 'retired' : 'disabled (BLOG_SOCIAL_MEDIA_ENABLED != true)'}`,
         `  shortform reels today: ${reelCountToday}개`,
         `  reel QA sheets today: ${reelQaCountToday}개`,
         `  instagram cards today: ${instaCardCountToday}개`,
       ],
       warn: [],
+      retired: isBlogSnsPublishingRetired(),
       reelCountToday,
       reelQaCountToday,
       instaCardCountToday,
@@ -1394,8 +1426,8 @@ async function buildEngagementHealth() {
       pgPool.query('blog', `
         SELECT status, COUNT(*)::int AS cnt
         FROM blog.neighbor_comments
-        WHERE timezone('Asia/Seoul', created_at)::date = timezone('Asia/Seoul', now())::date
-          ${commentSinceClause.replace(/detected_at/g, 'created_at')}
+        WHERE timezone('Asia/Seoul', CASE WHEN status = 'posted' THEN posted_at ELSE created_at END)::date = timezone('Asia/Seoul', now())::date
+          ${commentSinceClause.replace(/detected_at/g, 'COALESCE(posted_at, created_at)')}
         GROUP BY 1
       `),
       pgPool.get('blog', `
@@ -1538,14 +1570,12 @@ async function buildEngagementHealth() {
     const replyFailure = Number(actionMap.get('reply:fail') || 0);
     const neighborCommentSuccess = Number(actionMap.get('neighbor_comment:ok') || 0);
     const neighborCommentFailure = Number(actionMap.get('neighbor_comment:fail') || 0);
-    const sympathySuccess =
-      Number(actionMap.get('neighbor_sympathy:ok') || 0) +
-      Number(actionMap.get('neighbor_comment_sympathy:ok') || 0) +
-      Number(actionMap.get('comment_post_sympathy:ok') || 0);
-    const sympathyFailure =
-      Number(actionMap.get('neighbor_sympathy:fail') || 0) +
-      Number(actionMap.get('neighbor_comment_sympathy:fail') || 0) +
-      Number(actionMap.get('comment_post_sympathy:fail') || 0);
+    const commentSympathySuccess = Number(actionMap.get('neighbor_comment_sympathy:ok') || 0);
+    const standaloneSympathySuccess = Number(actionMap.get('neighbor_sympathy:ok') || 0);
+    const sympathySuccess = commentSympathySuccess + standaloneSympathySuccess;
+    const commentSympathyFailure = Number(actionMap.get('neighbor_comment_sympathy:fail') || 0);
+    const standaloneSympathyFailure = Number(actionMap.get('neighbor_sympathy:fail') || 0);
+    const sympathyFailure = commentSympathyFailure + standaloneSympathyFailure;
     const sympathyModuleUnavailableSkips = Number(actionMap.get('neighbor_sympathy_skip:ok') || 0);
 
     const inbound = commentRows?.[0] || { total: 0, replied: 0, pending: 0, failed: 0 };
@@ -1564,19 +1594,29 @@ async function buildEngagementHealth() {
       replyConfig.activeEndHour || 21
     );
     const neighborPlan = calcExpectedByWindow(
-      resolveExecutionTarget('neighborCommentTargetPerCycle', strategy, neighborConfig.maxDaily || 20),
+      BLOG_ENGAGEMENT_POLICY.neighborCommentsPerDay,
       neighborConfig.activeStartHour || 9,
       neighborConfig.activeEndHour || 21
     );
-    const sympathyPlan = calcExpectedByWindow(
-      resolveExecutionTarget('sympathyTargetPerCycle', strategy, neighborConfig.maxDaily || 20),
+    const commentSympathyPlan = calcExpectedByWindow(
+      BLOG_ENGAGEMENT_POLICY.commentSympathiesPerDay,
       neighborConfig.activeStartHour || 9,
       neighborConfig.activeEndHour || 21
     );
+    const standaloneSympathyPlan = calcExpectedByWindow(
+      BLOG_ENGAGEMENT_POLICY.standaloneSympathiesPerDay,
+      neighborConfig.activeStartHour || 9,
+      neighborConfig.activeEndHour || 21
+    );
+    const sympathyPlan = {
+      active: commentSympathyPlan.active || standaloneSympathyPlan.active,
+      target: commentSympathyPlan.target + standaloneSympathyPlan.target,
+      expectedNow: commentSympathyPlan.expectedNow + standaloneSympathyPlan.expectedNow,
+    };
     const adaptiveNeighborCadence = buildAdaptiveNeighborCadenceView({
       replySuccess,
       neighborSuccess: neighborCommentSuccess,
-      sympathySuccess,
+      sympathySuccess: commentSympathySuccess,
       replyPlan,
       neighborPlan,
       adaptiveEnabled: neighborConfig.adaptiveEnabled !== false,
@@ -1592,7 +1632,9 @@ async function buildEngagementHealth() {
     const ok = [
       `  replies: ${replySuccess}/${replyPlan.target} (expected now ${replyPlan.expectedNow})`,
       `  neighbor comments: ${neighborCommentSuccess}/${neighborPlan.target} (expected now ${neighborPlan.expectedNow})`,
-      `  sympathies: ${sympathySuccess}/${sympathyPlan.target} (expected now ${sympathyPlan.expectedNow})`,
+      `  comment sympathies: ${commentSympathySuccess}/${commentSympathyPlan.target} (expected now ${commentSympathyPlan.expectedNow})`,
+      `  standalone sympathies: ${standaloneSympathySuccess}/${standaloneSympathyPlan.target} (expected now ${standaloneSympathyPlan.expectedNow})`,
+      `  total sympathies: ${sympathySuccess}/${sympathyPlan.target} (expected now ${sympathyPlan.expectedNow})`,
       `  inbound comments today: ${Number(inbound.total || 0)}건 / replied ${Number(inbound.replied || 0)} / pending ${Number(inbound.pending || 0)}`,
       `  neighbor queue today: posted ${Number(neighborStatusMap.get('posted') || 0)} / failed ${Number(neighborStatusMap.get('failed') || 0)} / pending ${Number(neighborStatusMap.get('pending') || 0)}`,
       `  adaptive comment cadence: ${adaptiveNeighborCadence.shouldBoost ? 'boosted' : 'baseline'} / combined comments ${adaptiveNeighborCadence.combinedCommentSuccess}/${adaptiveNeighborCadence.combinedCommentExpectedNow} / process ${adaptiveNeighborCadence.effectiveProcessLimit} / collect ${adaptiveNeighborCadence.effectiveCollectLimit}`,
@@ -1614,8 +1656,11 @@ async function buildEngagementHealth() {
     if (neighborPlan.active && neighborCommentSuccess < neighborPlan.expectedNow) {
       warn.push(`  neighbor comments behind target: ${neighborCommentSuccess}/${neighborPlan.expectedNow} (today fail ${neighborCommentFailure})`);
     }
-    if (sympathyPlan.active && sympathySuccess < sympathyPlan.expectedNow) {
-      warn.push(`  sympathies behind target: ${sympathySuccess}/${sympathyPlan.expectedNow} (today fail ${sympathyFailure})`);
+    if (commentSympathyPlan.active && commentSympathySuccess < commentSympathyPlan.expectedNow) {
+      warn.push(`  comment sympathies behind target: ${commentSympathySuccess}/${commentSympathyPlan.expectedNow} (today fail ${commentSympathyFailure})`);
+    }
+    if (standaloneSympathyPlan.active && standaloneSympathySuccess < standaloneSympathyPlan.expectedNow) {
+      warn.push(`  standalone sympathies behind target: ${standaloneSympathySuccess}/${standaloneSympathyPlan.expectedNow} (today fail ${standaloneSympathyFailure})`);
     }
     if (adaptiveNeighborCadence.shouldBoost) {
       warn.push(`  adaptive cadence boosted: replies+neighbor ${adaptiveNeighborCadence.combinedCommentSuccess}/${adaptiveNeighborCadence.combinedCommentExpectedNow} / neighbor gap ${adaptiveNeighborCadence.neighborDeficit} / sympathy gap ${adaptiveNeighborCadence.sympathyDeficit}`);
@@ -1779,6 +1824,18 @@ async function buildEngagementHealth() {
         target: sympathyPlan.target,
         expectedNow: sympathyPlan.expectedNow,
         skippedModuleUnavailable: sympathyModuleUnavailableSkips,
+      },
+      commentSympathies: {
+        success: commentSympathySuccess,
+        failed: commentSympathyFailure,
+        target: commentSympathyPlan.target,
+        expectedNow: commentSympathyPlan.expectedNow,
+      },
+      standaloneSympathies: {
+        success: standaloneSympathySuccess,
+        failed: standaloneSympathyFailure,
+        target: standaloneSympathyPlan.target,
+        expectedNow: standaloneSympathyPlan.expectedNow,
       },
       inboundComments: {
         total: Number(inbound.total || 0),
@@ -2104,6 +2161,17 @@ async function buildPhase4CompetitionHealth() {
 }
 
 async function buildMarketingExpansionHealth() {
+  if (isBlogMarketingRetired()) {
+    return {
+      okCount: 1,
+      warnCount: 0,
+      ok: ['  marketing: retired'],
+      warn: [],
+      retired: true,
+      status: 'retired',
+      recommendations: [],
+    };
+  }
   const summarizeOperationalLearning = (operationalLearning = null) => {
     const patterns = Array.isArray(operationalLearning?.patterns) ? operationalLearning.patterns : [];
     const findSummary = (type) => {
@@ -2111,8 +2179,8 @@ async function buildMarketingExpansionHealth() {
       return item?.summary ? String(item.summary) : '';
     };
     return {
-      titlePatternSummary: findSummary('ops_high_performance_title_pattern'),
-      categorySummary: findSummary('ops_high_performance_category'),
+      titlePatternSummary: findSummary('ops_title_pattern_saturation'),
+      categorySummary: findSummary('ops_category_saturation'),
       alignmentSummary: findSummary('ops_alignment_signal'),
       autonomyLaneSummary: findSummary('ops_autonomy_lane'),
     };
@@ -2697,8 +2765,9 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHe
 }
 
 function buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth) {
-  const phase0Status =
-    instagramHealth.hostReady && !instagramHealth.critical ? 'completed' : 'in_progress';
+  const phase0Status = instagramHealth.retired
+    ? 'retired'
+    : (instagramHealth.hostReady && !instagramHealth.critical ? 'completed' : 'in_progress');
 
   const phase1Status = phase1Health.summary ? 'completed' : 'in_progress';
   const phase2Status = phase2BriefingHealth.briefingPassed ? 'completed' : 'in_progress';
@@ -2709,7 +2778,7 @@ function buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealt
   const autonomyStatus = autonomyHealth.totalCount > 0 ? 'completed' : 'in_progress';
 
   const ok = [
-    `  phase0 instagram: ${phase0Status === 'completed' ? '운영 준비 완료' : '운영 검증 진행중'}`,
+    `  phase0 instagram/facebook: ${phase0Status === 'retired' ? '은퇴' : (phase0Status === 'completed' ? '운영 준비 완료' : '운영 검증 진행중')}`,
     `  phase1 pipeline: ${phase1Status === 'completed' ? '완료' : '진행중'}`,
     `  phase2 briefing: ${phase2Status === 'completed' ? '완료' : '진행중'}`,
     `  phase3 feedback: ${phase3Status === 'completed' ? '실데이터 축적 시작' : 'warming_up'}`,
@@ -2721,7 +2790,7 @@ function buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealt
   if (phase3Status !== 'completed') {
     warn.push('  phase3 feedback: published 이후 후속 피드백 수집이 더 쌓여야 합니다');
   }
-  if (phase0Status !== 'completed') {
+  if (phase0Status === 'in_progress') {
     warn.push('  phase0 instagram: 실업로드 운영 검증이 아직 남아 있습니다');
   }
 

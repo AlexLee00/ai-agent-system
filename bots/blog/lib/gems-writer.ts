@@ -28,6 +28,7 @@ const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.j
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { isReaderFriendlyTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
+const { buildBookReviewTitleCandidate } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/book-review-title.ts'));
 const {
   resolveBlogWriterModel,
   resolveBlogWriterModelForAssignment,
@@ -104,8 +105,8 @@ const CAFE_FACT_GUARDRAILS = `
 
 const IT_NEWS_CATEGORIES = ['최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅'];
 const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output');
-const RECENT_GENERAL_THEME_WINDOW_DAYS = 14;
-const RECENT_GENERAL_THEME_LIMIT = 12;
+const RECENT_GENERAL_THEME_WINDOW_DAYS = 30;
+const RECENT_GENERAL_THEME_LIMIT = 80;
 const THEME_SIGNAL_MAP = [
   { label: 'AI 시대 프레임', patterns: [/AI 시대/gi] },
   { label: '멀티에이전트 운영 프레임', patterns: [/멀티에이전트/gi, /멀티 에이전트/gi] },
@@ -501,12 +502,6 @@ function _extractPrimaryBookAuthor(author) {
     .trim();
 }
 
-function _buildBookReviewTitleCandidate(bookInfo = {}) {
-  const title = String(bookInfo.title || '').trim();
-  if (!title) return '';
-  return `${title}를 읽고 지금 다시 보게 된 질문 3가지`;
-}
-
 function _buildBookReviewIdentitySection(bookInfo = {}) {
   const title = String(bookInfo.title || '').trim();
   const primaryAuthor = _extractPrimaryBookAuthor(bookInfo.author);
@@ -533,7 +528,7 @@ function _enforceGeneralTitleAlignment(content, category, researchData = {}) {
 
   const currentTitle = lines[firstIndex].trim();
   const bookReviewCandidate = category === '도서리뷰'
-    ? _buildBookReviewTitleCandidate(researchData.book_info || {})
+    ? buildBookReviewTitleCandidate(researchData.book_info || {})
     : '';
   const rawCandidateTitle = String(researchData.topic_title_candidate || bookReviewCandidate).trim();
   const candidateTitle = rawCandidateTitle && isReaderFriendlyTitle(rawCandidateTitle, category)
@@ -577,7 +572,7 @@ function _ensureBookReviewIdentity(content, category, researchData = {}) {
   if (firstIndex >= 0) {
     const currentTitle = lines[firstIndex].trim();
     if (!currentTitle.includes(expectedTitle)) {
-      const alignedTitle = String(researchData.topic_title_candidate || _buildBookReviewTitleCandidate(bookInfo)).trim();
+      const alignedTitle = String(researchData.topic_title_candidate || buildBookReviewTitleCandidate(bookInfo)).trim();
       lines[firstIndex] = _normalizeCategoryTitleLine(category, alignedTitle || expectedTitle);
     } else if (!currentTitle.startsWith(`[${category}]`)) {
       lines[firstIndex] = _normalizeCategoryTitleLine(category, currentTitle);
@@ -1339,16 +1334,6 @@ function _buildVariationBlock(variation = {}) {
     lines.push(`편집자 페르소나: ${variation.editorPersona.name} — ${variation.editorPersona.focus}`);
     lines.push(`편집자 지시: ${variation.editorPersona.instruction}`);
   }
-  if (variation.marketingContext?.signalTypes?.length) {
-    lines.push(`마케팅 신호: ${variation.marketingContext.signalTypes.join(', ')}`);
-  }
-  if (variation.marketingContext?.notes?.length) {
-    lines.push(`마케팅 지시: ${variation.marketingContext.notes.join(' / ')}`);
-  }
-  if (variation.marketingContext?.ctaMode === 'conversion') {
-    lines.push('CTA 강도: 예약/문의/체험 전환으로 이어지되 광고처럼 과하게 밀지 말고 본문 후반에 자연스럽게 연결');
-  }
-
   // ★ 보너스 인사이트 지시
   if (variation.bonusInsights?.length > 0) {
     lines.push('');
@@ -1401,11 +1386,6 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}, w
   const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
   const strategyFocus = (researchData.strategy_focus || []).filter(Boolean).join(' / ');
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
-  const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
-  const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
-  const marketingSignalSummary = String(researchData.topic_marketing_signal_summary || '').trim();
-  const marketingRecommendations = (researchData.topic_marketing_recommendations || []).filter(Boolean).join(' / ');
-  const marketingCtaHint = String(researchData.topic_marketing_cta_hint || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const writingLearningsBlock = await buildWritingLearningsPromptBlock({ category }).catch(() => '');
   const lifecyclePromptBlock = await buildBlogLifecyclePromptBlock({
@@ -1489,14 +1469,9 @@ ${topicDiff ? `[최근 글과의 차별화 포인트]\n${topicDiff}\n` : ''}
 ${topicTitleCandidate ? `[제목 후보 예시]\n${topicTitleCandidate}\n` : ''}
 ${strategyFocus ? `[이번 주 전략 포커스]\n${strategyFocus}\n` : ''}
 ${strategyRecommendations ? `[전략 권고]\n${strategyRecommendations}\n` : ''}
-${experimentWinnerSummary ? `[최근 실험 승자]\n${experimentWinnerSummary}\n` : ''}
-${experimentWeakLaneSummary ? `[최근 실험 약세 레인]\n${experimentWeakLaneSummary}\n` : ''}
 ${masterStyleHint ? `[마스터 스타일 가이드]\n${masterStyleHint}\n` : ''}
 ${writingLearningsBlock ? `${writingLearningsBlock}\n` : ''}
 ${lifecyclePromptBlock ? `${lifecyclePromptBlock}\n` : ''}
-${marketingSignalSummary ? `[매출/시즌 신호]\n${marketingSignalSummary}\n` : ''}
-${marketingRecommendations ? `[마케팅 반영 지시]\n${marketingRecommendations}\n` : ''}
-${marketingCtaHint ? `[전환 CTA 힌트]\n${marketingCtaHint}\n` : ''}
 ${charInstruction}
 ${topicHint
   ? `이번 수동 재작성은 위 [주제 힌트]를 중심 주제로 유지하여, 같은 문제의식을 새 글로 다시 작성하라.
@@ -1506,8 +1481,6 @@ ${topicHint
 단, 최근 발행 일반 글과 같은 상위 서사를 반복하면 안 된다.
 제목은 최근 발행 제목과 질문 구조, 어미, 핵심 표현이 겹치면 안 된다.
 특히 "왜 ...일까/무너질까/신뢰를 잃을까", "성공적인 ...전략" 같은 제목 템플릿을 최근 글과 비슷하게 반복하지 말라.
-실험 승자 신호가 있으면 그 방향은 살리되, 문장은 더 자연스럽고 덜 인위적으로 정리하라.
-실험 약세 레인이 있으면 그 카테고리/제목 패턴 냄새가 그대로 나지 않게 피하라.
 이번 글은 최근 글과 가장 멀리 떨어진 새 문제 정의를 먼저 고르고, 그에 맞는 제목을 작성하라.
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
 
@@ -1871,8 +1844,6 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const topicTitleCandidate = String(researchData.topic_title_candidate || '').trim();
   const strategyFocus = (researchData.strategy_focus || []).filter(Boolean).join(' / ');
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
-  const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
-  const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const writingLearningsBlock = await buildWritingLearningsPromptBlock({ category }).catch(() => '');
   const lifecyclePromptBlock = await buildBlogLifecyclePromptBlock({
@@ -1938,8 +1909,6 @@ ${topicDiff ? `\n[최근 글과의 차별화 포인트]\n${topicDiff}` : ''}
 ${topicTitleCandidate ? `\n[제목 후보 예시]\n${topicTitleCandidate}` : ''}
 ${strategyFocus ? `\n[이번 주 전략 포커스]\n${strategyFocus}` : ''}
 ${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''}
-${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
-${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 ${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''}
 ${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}
 ${lifecyclePromptBlock ? `\n${lifecyclePromptBlock}` : ''}`.trim();

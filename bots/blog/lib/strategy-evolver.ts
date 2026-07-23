@@ -7,7 +7,6 @@ const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { aggregateOperationalPatterns } = require('./feedback-learner.ts');
-const { readExperimentPlaybook } = require('./experiment-os.ts');
 const { readRecentBlogEvalCases } = require('./eval-case-telemetry.ts');
 
 const STRATEGY_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy');
@@ -135,10 +134,11 @@ async function readLowExposureSignal(threshold = 3) {
       ),
       neighbor AS (
         SELECT
-          timezone('Asia/Seoul', created_at)::date AS day,
-          COUNT(*) FILTER (WHERE status = 'posted')::int AS neighbor_posted
+          timezone('Asia/Seoul', posted_at)::date AS day,
+          COUNT(*)::int AS neighbor_posted
         FROM blog.neighbor_comments
-        WHERE created_at >= now() - interval '7 days'
+        WHERE status = 'posted'
+          AND posted_at >= now() - interval '7 days'
         GROUP BY 1
       )
       SELECT
@@ -204,8 +204,8 @@ function applyLowExposureFeedbackToPlan(plan = {}, exposureSignal = null) {
     Number(executionTargets.sympathyTargetPerCycle || 1),
     Number(engagementPolicy.sympathyTarget || 3),
   ) + Math.max(1, Math.ceil(boost / 2));
-  executionTargets.instagramRegistrationsPerCycle = Math.max(1, Number(executionTargets.instagramRegistrationsPerCycle || 1)) + 1;
-  executionTargets.facebookRegistrationsPerCycle = Math.max(1, Number(executionTargets.facebookRegistrationsPerCycle || 1));
+  executionTargets.instagramRegistrationsPerCycle = 0;
+  executionTargets.facebookRegistrationsPerCycle = 0;
 
   engagementPolicy.outboundNeighborCommentTarget = Number(executionTargets.neighborCommentTargetPerCycle || 2);
   engagementPolicy.sympathyTarget = Number(executionTargets.sympathyTargetPerCycle || 3);
@@ -226,11 +226,11 @@ function applyLowExposureFeedbackToPlan(plan = {}, exposureSignal = null) {
   directives.creativePolicy = creativePolicy;
   directives.titlePolicy = titlePolicy;
   directives.hashtagPolicy = hashtagPolicy;
-  directives.socialNativeRequired = true;
+  directives.socialNativeRequired = false;
   next.executionDirectives = directives;
 
   focus.unshift(`low_exposure_accumulated 대응: 댓글 유입 부족(${signal.daysWithNoInbound}/${signal.windowDays}일) 구간에 노출형 전략을 증폭`);
-  recommendations.unshift(`최근 ${signal.windowDays}일 기준 inbound ${signal.totalInbound}건, 연속 무유입 ${signal.consecutiveNoInboundDays}일로 low_exposure_accumulated 신호가 발생해 이웃댓글/공감/릴스 훅 강도를 상향합니다.`);
+  recommendations.unshift(`최근 ${signal.windowDays}일 기준 inbound ${signal.totalInbound}건, 연속 무유입 ${signal.consecutiveNoInboundDays}일로 low_exposure_accumulated 신호가 발생해 네이버 이웃댓글/공감 품질을 우선 점검합니다.`);
   recommendations.push('댓글 유입 부족 구간에서는 질문형 오프닝과 저장/공유 유도 문구를 우선 적용해 노출 루프를 먼저 복구합니다.');
 
   next.focus = [...new Set(focus.filter(Boolean))];
@@ -351,16 +351,16 @@ function buildExecutionDirectives(plan = {}, diagnosis = {}, marketingDigest = n
   return {
     channelPriority: {
       naverBlog: 'primary',
-      instagram: isAmplifyPush || instagramTarget > 1 ? 'primary' : 'secondary',
-      facebook: isConversionPush || facebookTarget > 1 ? 'secondary' : 'supporting',
+      instagram: 'retired',
+      facebook: 'retired',
     },
     executionTargets: {
       blogRegistrationsPerCycle: 1,
-      instagramRegistrationsPerCycle: instagramTarget,
-      facebookRegistrationsPerCycle: facebookTarget,
+      instagramRegistrationsPerCycle: 0,
+      facebookRegistrationsPerCycle: 0,
       replyTargetPerCycle: 1,
-      neighborCommentTargetPerCycle: neighborBase,
-      sympathyTargetPerCycle: sympathyBase,
+      neighborCommentTargetPerCycle: 1,
+      sympathyTargetPerCycle: 1,
     },
     titlePolicy: {
       preferredPattern: plan.preferredTitlePattern || null,
@@ -377,11 +377,7 @@ function buildExecutionDirectives(plan = {}, diagnosis = {}, marketingDigest = n
     hashtagPolicy: {
       mode: isAmplifyPush ? 'aggressive' : isConversionPush ? 'conversion' : 'balanced',
       focusTags: [...new Set(hashtagFocusTags)],
-      platformTags: isAmplifyPush
-        ? ['#릴스', '#reels', '#인스타마케팅', '#바이럴']
-        : isConversionPush
-          ? ['#예약문의', '#상담문의', '#전환콘텐츠']
-          : ['#블로그마케팅', '#콘텐츠전략'],
+      platformTags: [],
     },
     creativePolicy: {
       imageAggro: isAmplifyPush ? 'high' : isConversionPush ? 'medium' : 'medium',
@@ -411,16 +407,16 @@ function buildExecutionDirectives(plan = {}, diagnosis = {}, marketingDigest = n
       naverBlog: { postsPerCycle: 1 },
       instagram: {
         feedPerCycle: 0,
-        reelsPerCycle: instagramTarget,
-        storiesPerCycle: isAmplifyPush ? 1 : 0,
+        reelsPerCycle: 0,
+        storiesPerCycle: 0,
       },
-      facebook: { postsPerCycle: facebookTarget },
+      facebook: { postsPerCycle: 0 },
     },
     // Omnichannel: 인게이지먼트 정책
     engagementPolicy: {
       inboundReplyTarget: 1,
-      outboundNeighborCommentTarget: neighborBase,
-      sympathyTarget: sympathyBase,
+      outboundNeighborCommentTarget: 1,
+      sympathyTarget: 1,
       lowExposureEscalationThreshold: 3,  // 연속 노출 실패 횟수
     },
     // Omnichannel: 귀인 정책
@@ -430,7 +426,7 @@ function buildExecutionDirectives(plan = {}, diagnosis = {}, marketingDigest = n
       revenueUpliftThreshold: 0.05,
     },
     // strategy_native 강제 여부 (이 값이 true이면 naver fallback 없이 campaign 생성)
-    socialNativeRequired: missingStrategyNativeSignals && (isAmplifyPush || isConversionPush),
+    socialNativeRequired: false,
   };
 }
 
@@ -527,7 +523,10 @@ function extractOperationalLane(patterns = []) {
 }
 
 function extractOperationalTitlePattern(patterns = []) {
-  const titlePattern = (patterns || []).find((item) => item?.type === 'ops_high_performance_title_pattern');
+  const titlePattern = (patterns || []).find((item) => (
+    item?.type === 'ops_title_pattern_saturation'
+    || item?.type === 'ops_high_performance_title_pattern'
+  ));
   const summary = String(titlePattern?.recentSummaries?.[0] || '');
   if (summary.includes('checklist')) return 'checklist';
   if (summary.includes('experience')) return 'experience';
@@ -556,14 +555,13 @@ async function applyOperationalFeedbackToPlan(plan = {}) {
   const recommendations = Array.isArray(next.recommendations) ? [...next.recommendations] : [];
   const driftCategory = extractOperationalDriftCategory(patterns);
   const dominantLane = extractOperationalLane(patterns);
-  const preferredPattern = extractOperationalTitlePattern(patterns);
+  const saturatedPattern = extractOperationalTitlePattern(patterns);
 
-  if (preferredPattern) {
-    next.preferredTitlePattern = preferredPattern;
-    if (!next.suppressedTitlePattern || next.suppressedTitlePattern === preferredPattern) {
-      next.suppressedTitlePattern = preferredPattern === 'checklist' ? 'default' : next.suppressedTitlePattern;
-    }
-    focus.unshift(`${preferredPattern} 제목 패턴을 다음 발행 기본선으로 유지`);
+  if (saturatedPattern) {
+    next.suppressedTitlePattern = saturatedPattern;
+    if (next.preferredTitlePattern === saturatedPattern) next.preferredTitlePattern = null;
+    recommendations.unshift(`최근 ${saturatedPattern} 제목 패턴이 반복되어 다음 발행에서는 다른 구조를 선택합니다.`);
+    focus.unshift(`${saturatedPattern} 제목 패턴 반복 억제`);
   }
 
   if (driftCategory && driftCategory === next.suppressedCategory) {
@@ -592,26 +590,6 @@ async function applyOperationalFeedbackToPlan(plan = {}) {
   return next;
 }
 
-function summarizeExperimentLearning(playbook = null) {
-  const winner = playbook?.topWinner || null;
-  if (!winner?.dimension || !winner?.variant) {
-    return {
-      generatedAt: playbook?.generatedAt || null,
-      topWinnerSummary: '',
-      weakestVariantSummary: '',
-    };
-  }
-
-  const loser = playbook?.dimensions?.[winner.dimension === 'title_pattern' ? 'titlePattern' : winner.dimension === 'autonomy_lane' ? 'autonomyLane' : 'category']?.loser || null;
-  return {
-    generatedAt: playbook.generatedAt || null,
-    topWinnerSummary: `최근 실험 승자는 ${winner.dimension}:${winner.variant} (${Math.round(Number(winner.liftPct || 0) * 100)}% lift, n=${winner.sampleCount}) 입니다.`,
-    weakestVariantSummary: loser?.variant
-      ? `최근 약한 레인은 ${loser.dimension}:${loser.variant} (${Math.round(Number(loser.liftPct || 0) * 100)}% lift, n=${loser.sampleCount}) 입니다.`
-      : '',
-  };
-}
-
 function summarizeEvalLearning(cases = []) {
   const normalized = Array.isArray(cases) ? cases : [];
   const counts = normalized.reduce((acc, item) => {
@@ -628,7 +606,7 @@ function summarizeEvalLearning(cases = []) {
   const topRecurring = Object.entries(recurring)
     .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))[0];
   const publishFailureCount = Number(counts.publish || 0);
-  const marketingFailureCount = Number(counts.marketing || 0);
+  const marketingFailureCount = 0;
   const engagementFailureCount = Number(counts.engagement || 0);
   const stabilityMode = publishFailureCount >= 2 || marketingFailureCount >= 1;
 
@@ -649,56 +627,14 @@ function summarizeEvalLearning(cases = []) {
 }
 
 async function applyExperimentFeedbackToPlan(plan = {}) {
-  const playbook = readExperimentPlaybook();
-  if (!playbook || typeof playbook !== 'object') return plan;
-
-  const next = {
+  return {
     ...plan,
-    experimentLearning: summarizeExperimentLearning(playbook),
+    experimentLearning: {
+      retired: true,
+      topWinnerSummary: '',
+      weakestVariantSummary: '',
+    },
   };
-
-  const focus = Array.isArray(next.focus) ? [...next.focus] : [];
-  const recommendations = Array.isArray(next.recommendations) ? [...next.recommendations] : [];
-  const topWinner = playbook.topWinner || null;
-  const titleDimension = playbook?.dimensions?.titlePattern || null;
-  const categoryDimension = playbook?.dimensions?.category || null;
-
-  if (topWinner?.dimension === 'title_pattern' && topWinner.variant) {
-    next.preferredTitlePattern = topWinner.variant;
-    focus.unshift(`${topWinner.variant} 제목 패턴을 최근 실험 승자 기준으로 우선 유지`);
-    recommendations.unshift(`최근 실험에서 ${topWinner.variant} 제목 패턴이 가장 강해 다음 발행 기본선으로 승격합니다.`);
-  }
-
-  if (topWinner?.dimension === 'category' && topWinner.variant) {
-    next.preferredCategory = topWinner.variant;
-    next.preferredCategoryWeightBoost = Math.max(Number(next.preferredCategoryWeightBoost || 0), 6);
-    focus.unshift(`${topWinner.variant} 카테고리를 최근 실험 승자 기준으로 더 자주 노출`);
-    recommendations.unshift(`최근 실험에서 ${topWinner.variant} 카테고리 성과가 가장 좋아 우선 노출 비중을 높입니다.`);
-  }
-
-  if (titleDimension?.loser?.variant && titleDimension.loser.liftPct < -0.05) {
-    next.suppressedTitlePattern = titleDimension.loser.variant;
-    recommendations.push(`최근 실험 약세인 ${titleDimension.loser.variant} 제목 패턴은 당분간 억제하고 승자 패턴 검증에 더 집중합니다.`);
-  }
-
-  if (categoryDimension?.loser?.variant && categoryDimension.loser.liftPct < -0.08) {
-    next.suppressedCategory = categoryDimension.loser.variant;
-  }
-
-  next.focus = [...new Set(focus.filter(Boolean))];
-  next.recommendations = [...new Set(recommendations.filter(Boolean))];
-  if (next.executionDirectives && typeof next.executionDirectives === 'object') {
-    next.executionDirectives = {
-      ...next.executionDirectives,
-      titlePolicy: {
-        ...(next.executionDirectives.titlePolicy || {}),
-        preferredPattern: next.preferredTitlePattern || next.executionDirectives?.titlePolicy?.preferredPattern || null,
-        suppressedPattern: next.suppressedTitlePattern || next.executionDirectives?.titlePolicy?.suppressedPattern || null,
-      },
-    };
-  }
-
-  return next;
 }
 
 async function applyEvalFeedbackToPlan(plan = {}, previousPlan = null) {

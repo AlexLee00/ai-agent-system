@@ -3,10 +3,10 @@
 
 /**
  * bots/blog/lib/platform-orchestrator.ts
- * 3 플랫폼 (네이버/인스타/페이스북) 통합 발행 오케스트레이터
+ * 과거 네이버/인스타/페이스북 통합 발행 오케스트레이터.
  *
- * Phase 4: 블로그 글 → 멀티 플랫폼 자동 크로스포스팅
- * Kill Switch: BLOG_MULTI_PLATFORM_ENABLED=true
+ * Instagram/Facebook 실행 경로는 2026-07-23 은퇴했다. 호환용 변환
+ * helper와 상태 조회만 남기고 모든 게시 진입점은 retired 결과를 반환한다.
  *
  * 플랫폼별 최적 전략:
  *   네이버 블로그: 일 1~2편, 1500~3000자, 06:00 발행
@@ -15,54 +15,24 @@
  */
 
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
-const path = require('path');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const env = require('../../../packages/core/lib/env');
 const { loadStrategyBundle } = require('./strategy-loader.ts');
-const { getRecentPosts, selectAndValidateTopic } = require('./topic-selector.ts');
-const { blogToFacebookPost } = require('./cross-platform-adapter.ts');
-const { generateTrackingLink, recordPublishAttribution } = require('./attribution-tracker.ts');
-
-const publishReporter = require('./publish-reporter');
+const { buildRetiredFeatureResult } = require('./retirement-policy.ts');
 
 function isEnabled() {
-  return process.env.BLOG_MULTI_PLATFORM_ENABLED === 'true';
+  return false;
 }
 
 function isSnsCrosspostEnabled() {
-  return process.env.BLOG_SNS_CROSSPOST_ENABLED === 'true';
+  return false;
 }
 
 function buildSnsCrosspostDisabledResult(platform = 'sns') {
   return {
-    ok: true,
-    skipped: true,
+    ...buildRetiredFeatureResult(platform),
     platform,
-    reason: 'blog_sns_crosspost_disabled',
     snsCrosspostEnabled: false,
-  };
-}
-
-function getProjectRoot() {
-  return env.PROJECT_ROOT || process.env.PROJECT_ROOT || process.cwd();
-}
-
-function buildDryRunInstagramContent(content = '', title = '', category = '') {
-  const summary = String(content || '')
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 4)
-    .join('\n');
-
-  return {
-    caption: [title, summary, '#스터디카페 #공부습관 #자기계발']
-      .filter(Boolean)
-      .join('\n\n'),
-    hashtags: ['#스터디카페', '#공부습관', '#자기계발', `#${String(category || '블로그').replace(/\s+/g, '')}`],
-    thumbnailUrl: '',
-    dryRun: true,
   };
 }
 
@@ -78,15 +48,15 @@ const PLATFORM_STRATEGY = {
     internal_links_min: 1,
   },
   instagram: {
-    daily_reels: 1,
+    daily_reels: 0,
     optimal_hours: [9, 12, 20],
     reel_duration_sec: 45,
     caption_length_max: 2200,
     hashtags_max: 30,
-    story_posts: 2,
+    story_posts: 0,
   },
   facebook: {
-    daily_posts: 1,
+    daily_posts: 0,
     optimal_hours: [10, 13, 19],
     content_length_optimal: 150,
     share_blog_url: true,
@@ -106,13 +76,14 @@ function getEffectivePlatformStrategy() {
     },
     instagram: {
       ...PLATFORM_STRATEGY.instagram,
-      daily_reels: Math.max(0, Number(targets.instagramRegistrationsPerCycle || PLATFORM_STRATEGY.instagram.daily_reels || 1)),
-      priority: channelPriority.instagram || 'secondary',
+      daily_reels: 0,
+      story_posts: 0,
+      priority: 'retired',
     },
     facebook: {
       ...PLATFORM_STRATEGY.facebook,
-      daily_posts: Math.max(0, Number(targets.facebookRegistrationsPerCycle || PLATFORM_STRATEGY.facebook.daily_posts || 1)),
-      priority: channelPriority.facebook || 'supporting',
+      daily_posts: 0,
+      priority: 'retired',
     },
   };
 }
@@ -176,151 +147,8 @@ async function getLatestTodayPost() {
   }
 }
 
-function buildIndependentContentBody(selection = {}, strategy = {}) {
-  const focus = Array.isArray(strategy?.focus) ? strategy.focus.slice(0, 3) : [];
-  const recommendations = Array.isArray(selection?.marketingRecommendations)
-    ? selection.marketingRecommendations.slice(0, 3)
-    : [];
-  const keyQuestions = Array.isArray(selection?.keyQuestions)
-    ? selection.keyQuestions.slice(0, 3)
-    : [];
-
-  return [
-    `${selection.title || selection.topic || ''}.`,
-    selection.readerProblem ? `지금 독자 문제는 ${selection.readerProblem}입니다.` : '',
-    selection.openingAngle ? `이번 콘텐츠는 ${selection.openingAngle}에서 출발합니다.` : '',
-    keyQuestions.length ? keyQuestions.map((item, index) => `${index + 1}. ${item}`).join('\n') : '',
-    selection.marketingSignalSummary ? `현재 신호는 ${selection.marketingSignalSummary}입니다.` : '',
-    recommendations.length ? `실행 포인트:\n${recommendations.map((item) => `- ${item}`).join('\n')}` : '',
-    focus.length ? `전략 포커스:\n${focus.map((item) => `- ${item}`).join('\n')}` : '',
-    selection.closingAngle ? `마무리 방향은 ${selection.closingAngle}입니다.` : '',
-  ].filter(Boolean).join('\n\n');
-}
-
-function buildPlatformSpecificTitle(baseTitle = '', platform = 'instagram', selection = {}) {
-  const topic = String(selection?.topic || baseTitle || '').trim();
-  if (platform === 'instagram') {
-    return String(baseTitle || '').includes('체크')
-      ? `${baseTitle}`
-      : `${topic} 저장 포인트 3가지`;
-  }
-  if (platform === 'facebook') {
-    return `${topic} 이야기할 때 먼저 갈리는 기준`;
-  }
-  return String(baseTitle || topic || '').trim();
-}
-
-function buildPlatformVariantLabel(platform = 'instagram', selection = {}) {
-  const pattern = String(selection?.pattern || 'default').trim() || 'default';
-  if (platform === 'instagram') return `hook_${pattern}`;
-  if (platform === 'facebook') return `discussion_${pattern}`;
-  return `${platform}_${pattern}`;
-}
-
-function buildPlatformSpecificBody(platform = 'instagram', selection = {}, strategy = {}) {
-  const focus = Array.isArray(strategy?.focus) ? strategy.focus.slice(0, 2) : [];
-  const recommendations = Array.isArray(selection?.marketingRecommendations)
-    ? selection.marketingRecommendations.slice(0, 2)
-    : [];
-  const keyQuestions = Array.isArray(selection?.keyQuestions)
-    ? selection.keyQuestions.slice(0, 2)
-    : [];
-
-  if (platform === 'instagram') {
-    return [
-      `오늘 저장해둘 포인트는 ${selection.topic || selection.title || '핵심 실행 포인트'}입니다.`,
-      keyQuestions.length ? keyQuestions.map((item, index) => `${index + 1}. ${item}`).join('\n') : '',
-      recommendations.length ? `짧은 실행 포인트:\n${recommendations.map((item) => `- ${item}`).join('\n')}` : '',
-      focus.length ? `이번 릴스 포커스:\n${focus.map((item) => `- ${item}`).join('\n')}` : '',
-      '핵심만 짧고 강하게 전달하고, 저장/공유 후 바로 적용할 수 있게 정리합니다.',
-    ].filter(Boolean).join('\n\n');
-  }
-
-  if (platform === 'facebook') {
-    return [
-      `${selection.readerProblem || '지금 독자 문제를 먼저 정리합니다.'}`,
-      selection.openingAngle ? `이 주제는 ${selection.openingAngle}에서 생각해볼 필요가 있습니다.` : '',
-      keyQuestions.length ? `토론 포인트:\n${keyQuestions.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '',
-      recommendations.length ? `운영 힌트:\n${recommendations.map((item) => `- ${item}`).join('\n')}` : '',
-      '의견이 갈릴 수 있는 지점을 일부러 남겨 댓글과 공유를 유도합니다.',
-    ].filter(Boolean).join('\n\n');
-  }
-
-  return buildIndependentContentBody(selection, strategy);
-}
-
 async function buildIndependentPlatformCampaign(options = {}) {
-  const needInstagram = options.needInstagram !== false;
-  const needFacebook = options.needFacebook !== false;
-  const dryRun = options.dryRun === true;
-  const { plan } = loadStrategyBundle();
-  const category = String(plan?.preferredCategory || 'IT정보와분석');
-  const recentPosts = getRecentPosts(category, 8);
-  const selection = selectAndValidateTopic(
-    category,
-    recentPosts,
-    plan,
-    null,
-    null,
-    recentPosts.map((post) => post.title).filter(Boolean)
-  );
-  const syntheticPostId = `social_${Date.now()}`;
-  const baseTitle = String(selection?.title || selection?.topic || `${category} 전략 포인트`);
-  const instagramTitle = buildPlatformSpecificTitle(baseTitle, 'instagram', selection);
-  const facebookTitle = buildPlatformSpecificTitle(baseTitle, 'facebook', selection);
-  const instagramVariantLabel = buildPlatformVariantLabel('instagram', selection);
-  const facebookVariantLabel = buildPlatformVariantLabel('facebook', selection);
-  const instagramContentBody = buildPlatformSpecificBody('instagram', selection, plan || {});
-  const facebookContentBody = buildPlatformSpecificBody('facebook', selection, plan || {});
-  const trackingInstagram = generateTrackingLink(`${syntheticPostId}_instagram`, 'instagram', '', instagramVariantLabel);
-  const trackingFacebook = generateTrackingLink(`${syntheticPostId}_facebook`, 'facebook', '', facebookVariantLabel);
-  let instaContent = null;
-  if (needInstagram) {
-    instaContent = dryRun
-      ? buildDryRunInstagramContent(instagramContentBody, instagramTitle, category)
-      : await require('./social.ts').createInstaContent(instagramContentBody, instagramTitle, category, 0, {
-          strategy: plan,
-          blogUrl: trackingInstagram.url,
-        });
-  }
-
-  const facebookContent = needFacebook
-    ? blogToFacebookPost({
-        title: facebookTitle,
-        content: facebookContentBody,
-        category,
-        url: trackingFacebook.url,
-      }, 200, plan)
-    : null;
-
-  return {
-    id: syntheticPostId,
-    title: baseTitle,
-    category,
-    url: trackingFacebook.url,
-    naver_url: trackingFacebook.url,
-    synthetic: true,
-    sourceMode: 'strategy_native',
-    platformVariants: {
-      instagram: {
-        title: instagramTitle,
-        content: instagramContentBody,
-        variantLabel: instagramVariantLabel,
-      },
-      facebook: {
-        title: facebookTitle,
-        content: facebookContentBody,
-        variantLabel: facebookVariantLabel,
-      },
-    },
-    instaContent,
-    facebookContent,
-    tracking: {
-      instagram: trackingInstagram,
-      facebook: trackingFacebook,
-    },
-    topicSelection: selection,
-  };
+  return buildSnsCrosspostDisabledResult('independent_campaign');
 }
 
 /**
@@ -329,36 +157,7 @@ async function buildIndependentPlatformCampaign(options = {}) {
  * @param {boolean} dryRun
  */
 async function crosspostToInstagram(blogPost, dryRun = false) {
-  if (!isSnsCrosspostEnabled()) {
-    console.log('[platform-orchestrator] BLOG_SNS_CROSSPOST_ENABLED=false — 인스타 크로스포스트 스킵');
-    return buildSnsCrosspostDisabledResult('instagram');
-  }
-  try {
-    const crossposter = require(path.join(getProjectRoot(), 'bots/social-media/instagram/lib/insta-crosspost.ts'));
-    const payload = blogPost?.sourceMode === 'strategy_native'
-      ? blogPost?.instaContent
-      : { caption: `${blogPost.title}\n\n#스터디카페 #집중력 #공부 #개발`, thumbnailUrl: blogPost.thumbnail_url };
-    const publishTitle = blogPost?.platformVariants?.instagram?.title || blogPost.title;
-    const result = await crossposter.crosspostToInstagram(
-      payload,
-      publishTitle,
-      String(blogPost.id || ''),
-      dryRun,
-    );
-    if (result?.ok && blogPost?.sourceMode === 'strategy_native') {
-      await recordPublishAttribution(
-        String(blogPost.id || ''),
-        publishTitle,
-        blogPost?.tracking?.instagram?.url || blogPost.naver_url || blogPost.url || '',
-        new Date(),
-        'instagram'
-      ).catch(() => {});
-    }
-    return result;
-  } catch (err) {
-    console.warn('[platform-orchestrator] 인스타 크로스포스트 실패:', err.message);
-    return null;
-  }
+  return buildSnsCrosspostDisabledResult('instagram');
 }
 
 /**
@@ -367,59 +166,11 @@ async function crosspostToInstagram(blogPost, dryRun = false) {
  * @param {boolean} dryRun
  */
 async function crosspostToFacebook(blogPost, dryRun = false) {
-  if (!isSnsCrosspostEnabled()) {
-    console.log('[platform-orchestrator] BLOG_SNS_CROSSPOST_ENABLED=false — 페이스북 크로스포스트 스킵');
-    return buildSnsCrosspostDisabledResult('facebook');
-  }
-  try {
-    const { publishFacebookPost } = require(path.join(getProjectRoot(), 'bots/social-media/facebook/lib/facebook-publisher.ts'));
-    const prepared = blogPost?.sourceMode === 'strategy_native'
-      ? (blogPost.facebookContent || {})
-      : {
-          message: `${blogPost.title} - 스터디카페 공부법과 자기계발 이야기를 나눕니다.`,
-          link: blogPost.naver_url || blogPost.url || '',
-        };
-    const publishTitle = blogPost?.platformVariants?.facebook?.title || blogPost.title;
-    const result = await publishFacebookPost({
-      message: prepared.message,
-      link: prepared.link || blogPost.naver_url || blogPost.url || '',
-      dryRun,
-    });
-    if (result?.postId && blogPost?.sourceMode === 'strategy_native') {
-      await recordPublishAttribution(
-        String(blogPost.id || ''),
-        publishTitle,
-        prepared.link || blogPost.naver_url || blogPost.url || '',
-        new Date(),
-        'facebook'
-      ).catch(() => {});
-    }
-    return result;
-  } catch (err) {
-    console.warn('[platform-orchestrator] 페이스북 크로스포스트 실패:', err.message);
-    return null;
-  }
+  return buildSnsCrosspostDisabledResult('facebook');
 }
 
 async function runStrategyNativeFollowup(platform, dryRun = false) {
-  if (!isSnsCrosspostEnabled()) {
-    return buildSnsCrosspostDisabledResult(platform);
-  }
-  const campaign = await buildIndependentPlatformCampaign({
-    needInstagram: platform === 'instagram',
-    needFacebook: platform === 'facebook',
-    dryRun,
-  });
-
-  if (platform === 'instagram') {
-    const result = await Promise.resolve(crosspostToInstagram(campaign, dryRun))
-      .catch((error) => ({ ok: false, status: 'failed', error: error?.message || String(error) }));
-    return { campaign, result };
-  }
-
-  const result = await Promise.resolve(crosspostToFacebook(campaign, dryRun))
-    .catch((error) => ({ ok: false, status: 'failed', error: error?.message || String(error) }));
-  return { campaign, result };
+  return buildSnsCrosspostDisabledResult(platform);
 }
 
 /**
@@ -428,14 +179,9 @@ async function runStrategyNativeFollowup(platform, dryRun = false) {
 async function sendDailyOrchestrationReport(status) {
   const strategy = getEffectivePlatformStrategy();
   const naverStatus = status.naver > 0 ? `✅ ${status.naver}/${strategy.naver_blog.daily_posts}편` : `❌ 0/${strategy.naver_blog.daily_posts}`;
-  const igStatus = status.instagram > 0 ? `✅ ${status.instagram}/${strategy.instagram.daily_reels}건` : `⏳ 0/${strategy.instagram.daily_reels}`;
-  const fbStatus = status.facebook > 0 ? `✅ ${status.facebook}/${strategy.facebook.daily_posts}건` : `⏳ 0/${strategy.facebook.daily_posts}`;
-
-  const msg = `📢 [블로팀] 3 플랫폼 발행 현황\n`
+  const msg = `📢 [블로팀] 네이버 발행 현황\n`
     + `📝 네이버: ${naverStatus}\n`
-    + `📷 인스타: ${igStatus}\n`
-    + `👥 페북: ${fbStatus}\n`
-    + `🎯 priority: 네이버=${strategy.naver_blog.priority} / 인스타=${strategy.instagram.priority} / 페북=${strategy.facebook.priority}`;
+    + '📷 인스타·👥 페북: retired';
 
   await runIfOps(
     'blog-orchestration-report',
@@ -450,185 +196,7 @@ async function sendDailyOrchestrationReport(status) {
  * 이 함수는 인스타/페북 크로스포스트 + 상태 보고를 담당
  */
 async function orchestrateDailyPublishing(dryRun = false) {
-  if (!isEnabled()) {
-    console.log('[platform-orchestrator] BLOG_MULTI_PLATFORM_ENABLED=false — 건너뜀');
-    return null;
-  }
-  // B5a removed the old broad crosspost path; this remaining consumer is kept
-  // behind a narrower SNS gate so daily Naver publishing stays unaffected.
-  if (!isSnsCrosspostEnabled()) {
-    console.log('[platform-orchestrator] BLOG_SNS_CROSSPOST_ENABLED=false — SNS 크로스포스트 스킵');
-    return buildSnsCrosspostDisabledResult('orchestrator');
-  }
-
-  const [igQuota, fbQuota] = await Promise.all([
-    hasRemainingPublishQuota('instagram'),
-    hasRemainingPublishQuota('facebook'),
-  ]);
-  const latestBlogPost = await getLatestTodayPost();
-  const blogPost = latestBlogPost || ((igQuota || fbQuota)
-    ? await buildIndependentPlatformCampaign({ needInstagram: igQuota, needFacebook: fbQuota, dryRun })
-    : null);
-  if (!blogPost) {
-    console.log('[platform-orchestrator] 오늘 발행된 네이버 포스팅도 없고 실행할 전략 기반 플랫폼 quota도 없음 — 건너뜀');
-    return null;
-  }
-
-  console.log(`[platform-orchestrator] 오케스트레이션 시작 — "${blogPost.title}" (${blogPost.sourceMode || 'naver_post'})`);
-  const [igResult, fbResult] = await Promise.allSettled([
-    igQuota ? crosspostToInstagram(blogPost, dryRun) : Promise.resolve({ ok: false, skipped: true, reason: 'strategy_quota_reached' }),
-    fbQuota ? crosspostToFacebook(blogPost, dryRun) : Promise.resolve({ ok: false, skipped: true, reason: 'strategy_quota_reached' }),
-  ]);
-
-  const igSuccess = igResult.status === 'fulfilled' && igResult.value?.ok !== false;
-  const fbSuccess = fbResult.status === 'fulfilled' && fbResult.value !== null;
-
-  // 발행 성공/실패 보고
-  if (!dryRun) {
-    if (igSuccess) {
-      await publishReporter.reportPublishSuccess('instagram', blogPost.title, blogPost.naver_url || blogPost.url || '', {
-        previewBundle: blogPost.sourceMode || 'naver_post',
-        postId: blogPost.id || null,
-        sourceMode: blogPost.sourceMode || 'naver_post',
-        metadata: {
-          synthetic: Boolean(blogPost.synthetic),
-          category: blogPost.category || null,
-          variantLabel: blogPost?.platformVariants?.instagram?.variantLabel || null,
-        },
-      }).catch(() => {});
-    } else {
-      const igErr = igResult.status === 'rejected'
-        ? (igResult.reason?.message || '알 수 없는 오류')
-        : '알 수 없는 오류';
-      await publishReporter.reportPublishFailure('instagram', blogPost.title, igErr, {
-        previewBundle: blogPost.sourceMode || 'naver_post',
-        postId: blogPost.id || null,
-        sourceMode: blogPost.sourceMode || 'naver_post',
-        metadata: {
-          synthetic: Boolean(blogPost.synthetic),
-          category: blogPost.category || null,
-          variantLabel: blogPost?.platformVariants?.instagram?.variantLabel || null,
-        },
-      }).catch(() => {});
-    }
-
-    if (fbSuccess) {
-      await publishReporter.reportPublishSuccess('facebook', blogPost.title, blogPost.naver_url || blogPost.url || '', {
-        previewBundle: blogPost.sourceMode || 'naver_post',
-        postId: blogPost.id || null,
-        sourceMode: blogPost.sourceMode || 'naver_post',
-        metadata: {
-          synthetic: Boolean(blogPost.synthetic),
-          category: blogPost.category || null,
-          variantLabel: blogPost?.platformVariants?.facebook?.variantLabel || null,
-        },
-      }).catch(() => {});
-    } else {
-      const fbErr = fbResult.status === 'rejected'
-        ? (fbResult.reason?.message || '알 수 없는 오류')
-        : '알 수 없는 오류';
-      await publishReporter.reportPublishFailure('facebook', blogPost.title, fbErr, {
-        previewBundle: blogPost.sourceMode || 'naver_post',
-        postId: blogPost.id || null,
-        sourceMode: blogPost.sourceMode || 'naver_post',
-        metadata: {
-          synthetic: Boolean(blogPost.synthetic),
-          category: blogPost.category || null,
-          variantLabel: blogPost?.platformVariants?.facebook?.variantLabel || null,
-        },
-      }).catch(() => {});
-    }
-  }
-
-  const strategy = getEffectivePlatformStrategy();
-  const shouldRunExtraInstagram = Boolean(
-    latestBlogPost
-    && igQuota
-    && Number(strategy.instagram.daily_reels || 0) > 1
-  );
-  const shouldRunExtraFacebook = Boolean(
-    latestBlogPost
-    && fbQuota
-    && Number(strategy.facebook.daily_posts || 0) > 1
-  );
-
-  /** @type {{ instagram?: any, facebook?: any }} */
-  const strategyNativeFollowups = {};
-
-  if (shouldRunExtraInstagram) {
-    const extraInstagram = await runStrategyNativeFollowup('instagram', dryRun);
-    strategyNativeFollowups.instagram = extraInstagram;
-    if (!dryRun) {
-      if (extraInstagram.result?.ok) {
-        await publishReporter.reportPublishSuccess('instagram', extraInstagram.campaign.title, extraInstagram.campaign.naver_url || extraInstagram.campaign.url || '', {
-          previewBundle: 'strategy_native_followup',
-          postId: extraInstagram.campaign.id || null,
-          sourceMode: 'strategy_native',
-          metadata: {
-            synthetic: true,
-            category: extraInstagram.campaign.category || null,
-            followup: true,
-            variantLabel: extraInstagram.campaign?.platformVariants?.instagram?.variantLabel || null,
-          },
-        }).catch(() => {});
-      } else {
-        await publishReporter.reportPublishFailure('instagram', extraInstagram.campaign.title, extraInstagram.result?.error || '알 수 없는 오류', {
-          previewBundle: 'strategy_native_followup',
-          postId: extraInstagram.campaign.id || null,
-          sourceMode: 'strategy_native',
-          metadata: {
-            synthetic: true,
-            category: extraInstagram.campaign.category || null,
-            followup: true,
-            variantLabel: extraInstagram.campaign?.platformVariants?.instagram?.variantLabel || null,
-          },
-        }).catch(() => {});
-      }
-    }
-  }
-
-  if (shouldRunExtraFacebook) {
-    const extraFacebook = await runStrategyNativeFollowup('facebook', dryRun);
-    strategyNativeFollowups.facebook = extraFacebook;
-    if (!dryRun) {
-      if (extraFacebook.result?.postId || extraFacebook.result?.ok) {
-        await publishReporter.reportPublishSuccess('facebook', extraFacebook.campaign.title, extraFacebook.campaign.naver_url || extraFacebook.campaign.url || '', {
-          previewBundle: 'strategy_native_followup',
-          postId: extraFacebook.campaign.id || null,
-          sourceMode: 'strategy_native',
-          metadata: {
-            synthetic: true,
-            category: extraFacebook.campaign.category || null,
-            followup: true,
-            variantLabel: extraFacebook.campaign?.platformVariants?.facebook?.variantLabel || null,
-          },
-        }).catch(() => {});
-      } else {
-        await publishReporter.reportPublishFailure('facebook', extraFacebook.campaign.title, extraFacebook.result?.error || '알 수 없는 오류', {
-          previewBundle: 'strategy_native_followup',
-          postId: extraFacebook.campaign.id || null,
-          sourceMode: 'strategy_native',
-          metadata: {
-            synthetic: true,
-            category: extraFacebook.campaign.category || null,
-            followup: true,
-            variantLabel: extraFacebook.campaign?.platformVariants?.facebook?.variantLabel || null,
-          },
-        }).catch(() => {});
-      }
-    }
-  }
-
-  const status = await getTodayPublishStatus();
-  await sendDailyOrchestrationReport(status);
-
-  return {
-    blogPost,
-    instagram: { success: igSuccess },
-    facebook: { success: fbSuccess },
-    strategyNativeFollowups,
-    status,
-  };
+  return buildSnsCrosspostDisabledResult('orchestrator');
 }
 
 module.exports = {

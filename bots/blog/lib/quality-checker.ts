@@ -731,7 +731,7 @@ async function checkDuplicate30d(title, category = null) {
     const params = category ? [cutoff, category] : [cutoff];
     const rows = await pgPool.query('blog',
       `SELECT title FROM blog.posts
-       WHERE type = 'general'
+       WHERE post_type = 'general'
          AND DATE(publish_date) >= $1
          AND status NOT IN ('failed', 'error')
          ${whereCategory}

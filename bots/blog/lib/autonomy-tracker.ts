@@ -18,9 +18,9 @@ type AutonomyHistoryRow = {
   current_phase?: AutonomyPhase;
 };
 
-async function getPhaseHistory(weeks = 8) {
+async function getPhaseHistory(weeks = 8, pool = pgPool) {
   try {
-    return await pgPool.query('blog', `
+    return await pool.query('blog', `
       SELECT week_of, accuracy, current_phase, phase_changed
       FROM blog.autonomy_log
       ORDER BY week_of DESC
@@ -29,9 +29,11 @@ async function getPhaseHistory(weeks = 8) {
   } catch { return []; }
 }
 
-async function trackWeeklyAutonomy() {
-  const accuracy = await calculateAccuracy(7);
-  const history = await getPhaseHistory(CONSECUTIVE_WEEKS_REQUIRED);
+async function trackWeeklyAutonomy(options: any = {}) {
+  const pool = options.pool || pgPool;
+  const calculateAccuracyFn = options.calculateAccuracyFn || calculateAccuracy;
+  const accuracy = await calculateAccuracyFn(7);
+  const history = await getPhaseHistory(CONSECUTIVE_WEEKS_REQUIRED, pool);
   const currentPhase = (history[0]?.current_phase || 1) as AutonomyPhase;
 
   let newPhase = currentPhase;
@@ -55,12 +57,20 @@ async function trackWeeklyAutonomy() {
     phaseChanged = true;
   }
 
-  await pgPool.query('blog', `
-    INSERT INTO blog.autonomy_log (week_of, accuracy, current_phase, phase_changed)
-    VALUES (CURRENT_DATE, $1, $2, $3)
-  `, [accuracy, newPhase, phaseChanged]);
+  if (options.write !== false) {
+    await pool.query('blog', `
+      INSERT INTO blog.autonomy_log (week_of, accuracy, current_phase, phase_changed)
+      VALUES (CURRENT_DATE, $1, $2, $3)
+    `, [accuracy, newPhase, phaseChanged]);
+  }
 
-  return { accuracy, previousPhase: currentPhase, currentPhase: newPhase, phaseChanged };
+  return {
+    accuracy,
+    previousPhase: currentPhase,
+    currentPhase: newPhase,
+    phaseChanged,
+    persisted: options.write !== false,
+  };
 }
 
 module.exports = { trackWeeklyAutonomy, getPhaseHistory };

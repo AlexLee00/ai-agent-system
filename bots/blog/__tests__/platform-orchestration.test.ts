@@ -218,26 +218,20 @@ describe('platform-orchestrator', () => {
     expect(orchestrator.isEnabled()).toBe(false);
   });
 
-  test('orchestrateDailyPublishing — disabled 시 null', async () => {
+  test('orchestrateDailyPublishing — 항상 retired', async () => {
     const result = await orchestrator.orchestrateDailyPublishing(true);
-    expect(result).toBeNull();
+    expect(result).toMatchObject({ skipped: true, retired: true, reason: 'blog_feature_retired' });
   });
 
-  test('orchestrateDailyPublishing — enabled + 오늘 포스트 없으면 strategy_native fallback 또는 null', async () => {
+  test('orchestrateDailyPublishing — legacy env로도 다시 활성화되지 않음', async () => {
     process.env.BLOG_MULTI_PLATFORM_ENABLED = 'true';
-    pgPool.get.mockResolvedValueOnce(null);
     const result = await orchestrator.orchestrateDailyPublishing(true);
-    if (result?.reason === 'blog_sns_crosspost_disabled') {
-      expect(result.skipped).toBe(true);
-      expect(result.platform).toBe('orchestrator');
-      return;
-    }
-    if (result === null) {
-      expect(result).toBeNull();
-      return;
-    }
-    expect(result).toHaveProperty('blogPost');
-    expect(result.blogPost?.sourceMode).toBe('strategy_native');
+    expect(result).toMatchObject({ skipped: true, retired: true, platform: 'orchestrator' });
+  });
+
+  test('buildIndependentPlatformCampaign — 잠든 캠페인 생성 경로도 retired', async () => {
+    const result = await orchestrator.buildIndependentPlatformCampaign({ dryRun: false });
+    expect(result).toMatchObject({ skipped: true, retired: true, platform: 'independent_campaign' });
   });
 
   test('PLATFORM_STRATEGY — 3 플랫폼 모두 정의', () => {

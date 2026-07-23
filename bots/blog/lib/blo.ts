@@ -61,11 +61,6 @@ const { getWriterPersona }                          = require(path.join(env.PROJ
 const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.ts'));
 const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 const { normalizeExecutionDirectives }             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
-const { senseDailyState }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/sense-engine.ts'));
-const { analyzeMarketingToRevenue }                = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-revenue-correlation.ts'));
-const { recordPublishedExperimentRun }             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/experiment-os.ts'));
-const { readExperimentPlaybook }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/experiment-os.ts'));
-const { fetchRevenueAttributionWeights }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { detectTitlePattern }                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const {
   generateHomeFeedReport,
@@ -91,6 +86,8 @@ const {
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
 const { runTitleFeedbackLoop }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/title-feedback-loop.ts'));
+const { assertFinalGeneralTitle }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/final-title-guard.ts'));
+const { buildBookReviewTitleCandidate }              = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/book-review-title.ts'));
 const { buildContentHarnessReport }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/content-harness.ts'));
 const { resolveBlogWriterAssignment }               = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
 const {
@@ -104,10 +101,6 @@ const {
   isAgentIntroLecture,
   buildAgentIntroSearchKeywords,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agent-intro-curriculum.ts'));
-const {
-  isBlogMarketingEnabled,
-  buildMarketingDisabledResult,
-}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-enabled.ts'));
 const {
   getVaultLectureContext,
   getVaultRelatedPosts,
@@ -133,7 +126,6 @@ const COMPETITION_ENABLED                           = competitionRuntimeConfig.e
 const COMPETITION_DAYS                              = Array.isArray(competitionRuntimeConfig.days) && competitionRuntimeConfig.days.length
   ? competitionRuntimeConfig.days
   : [1, 3, 5];
-const BLOG_MARKETING_ENABLED                        = isBlogMarketingEnabled();
 // 이미지 생성 스위치 — 기본 false (BLOG_IMAGE_GEN_ENABLED=true 로 명시적 활성화 필요)
 const IMAGE_GEN_ENABLED                             = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
 // Humanize Layer — 기본 false (BLOG_HUMANIZE_ENABLED=true 로 명시적 활성화)
@@ -356,39 +348,6 @@ async function _buildBookReviewSkillInput(researchData = {}) {
   };
 }
 
-function _buildMarketingResearchContext(category, dailyState = {}) {
-  const senseState = dailyState?.senseState || null;
-  const revenueCorrelation = dailyState?.revenueCorrelation || null;
-  const signals = Array.isArray(senseState?.signals) ? senseState.signals : [];
-  const signalTypes = signals.map((signal) => String(signal?.type || '')).filter(Boolean);
-  const recommendations = [];
-  let ctaHint = '';
-
-  if (signalTypes.includes('revenue_anomaly') || signalTypes.includes('revenue_decline') || Number(revenueCorrelation?.revenueImpactPct || 0) < 0) {
-    recommendations.push('매출/전환 하락 신호가 있어 독자가 바로 행동할 수 있는 CTA를 과하지 않게 연결');
-    if (['홈페이지와App', '개발기획과컨설팅', '성장과성공'].includes(category)) {
-      ctaHint = '체험 예약, 문의, 상담, 방문 유도 중 하나를 본문 후반부에 자연스럽게 연결';
-    }
-  }
-
-  if (signalTypes.includes('exam_period') || Number(senseState?.skaEnvironment?.exam_score || 0) > 0) {
-    recommendations.push('시험기간 신호가 있어 학습 효율, 몰입 환경, 루틴 유지 포인트를 본문에 포함');
-    if (!ctaHint) {
-      ctaHint = '시험기간 독자가 바로 적용할 집중 루틴 또는 학습 효율 팁을 결론부에 연결';
-    }
-  }
-
-  if (signalTypes.includes('holiday') || !!senseState?.skaEnvironment?.holiday_flag) {
-    recommendations.push('공휴일 맥락이 있어 무겁기보다 가볍게 읽히는 체크리스트형 전개를 우선');
-  }
-
-  return {
-    marketing_signal_summary: signalTypes.length ? signalTypes.join(' / ') : '특이 신호 없음',
-    marketing_recommendations: recommendations,
-    marketing_cta_hint: ctaHint,
-  };
-}
-
 function _normalizeTitleTokens(text = '') {
   return String(text || '')
     .replace(/^\[[^\]]+\]\s*/, '')
@@ -443,26 +402,6 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, da
     dailyState?.senseState || null,
     dailyState?.revenueCorrelation || null
   );
-  const marketingContext = _buildMarketingResearchContext(category, dailyState);
-  const experimentPlaybook = readExperimentPlaybook() || null;
-  const experimentDimensionKey = experimentPlaybook?.topWinner?.dimension === 'title_pattern'
-    ? 'titlePattern'
-    : experimentPlaybook?.topWinner?.dimension === 'autonomy_lane'
-      ? 'autonomyLane'
-      : 'category';
-  const experimentLoser = experimentPlaybook?.dimensions?.[experimentDimensionKey]?.loser || null;
-  const experimentWinnerSummary = strategyPlan?.experimentLearning?.topWinnerSummary
-    || (
-      experimentPlaybook?.topWinner?.variant
-        ? `최근 실험 승자는 ${experimentPlaybook.topWinner.dimension}:${experimentPlaybook.topWinner.variant} (${Math.round(Number(experimentPlaybook.topWinner.liftPct || 0) * 100)}% lift, n=${experimentPlaybook.topWinner.sampleCount}) 입니다.`
-        : ''
-    );
-  const experimentWeakLaneSummary = strategyPlan?.experimentLearning?.weakestVariantSummary
-    || (
-      experimentLoser?.variant
-        ? `최근 약한 레인은 ${experimentLoser.dimension}:${experimentLoser.variant} (${Math.round(Number(experimentLoser.liftPct || 0) * 100)}% lift, n=${experimentLoser.sampleCount}) 입니다.`
-        : ''
-    );
 
   return {
     ...preparedResearch,
@@ -475,21 +414,20 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, da
     topic_key_questions: Array.isArray(selectedTopic.keyQuestions) ? selectedTopic.keyQuestions : [],
     topic_closing_angle: selectedTopic.closingAngle || '',
     topic_freshness_summary: selectedTopic.freshnessSummary || '',
-    topic_marketing_signal_summary: selectedTopic.marketingSignalSummary || marketingContext.marketing_signal_summary,
-    topic_marketing_recommendations: Array.isArray(selectedTopic.marketingRecommendations) ? selectedTopic.marketingRecommendations : marketingContext.marketing_recommendations,
-    topic_marketing_cta_hint: selectedTopic.marketingCtaHint || marketingContext.marketing_cta_hint,
+    topic_marketing_signal_summary: '',
+    topic_marketing_recommendations: [],
+    topic_marketing_cta_hint: '',
     topic_selection_source: selectedTopic.source || (selectedTopic.forced ? 'runtime_pool' : 'runtime_selector'),
     topic_selection_id: selectedTopic.id || null,
     topic_selection_target_date: selectedTopic.targetDate || selectedTopic.target_date || null,
     strategy_focus: Array.isArray(strategyPlan?.focus) ? strategyPlan.focus : [],
     strategy_recommendations: [
       ...(Array.isArray(strategyPlan?.recommendations) ? strategyPlan.recommendations : []),
-      ...(Array.isArray(selectedTopic.marketingRecommendations) ? selectedTopic.marketingRecommendations : []),
     ],
     strategy_preferred_pattern: strategyPlan?.preferredTitlePattern || null,
     strategy_suppressed_pattern: strategyPlan?.suppressedTitlePattern || null,
-    strategy_experiment_winner: experimentWinnerSummary,
-    strategy_experiment_weak_lane: experimentWeakLaneSummary,
+    strategy_experiment_winner: '',
+    strategy_experiment_weak_lane: '',
     _selectedTopic: selectedTopic,
   };
 }
@@ -664,7 +602,7 @@ function _buildBookReviewTopicMeta(bookInfo = {}) {
     topic_hint: `${title}를 읽고 지금 다시 붙잡아야 할 질문`,
     topic_question: `${title}는 지금 어떤 독자에게 왜 다시 읽힐 가치가 있는가`,
     topic_diff: '줄거리 요약보다 핵심 주장과 실무 적용 포인트 중심으로 정리',
-    topic_title_candidate: `${title}를 읽고 지금 다시 보게 된 질문 3가지`,
+    topic_title_candidate: buildBookReviewTitleCandidate(bookInfo),
     topic_reader_problem: '책 소개보다 이 책이 지금 왜 유효한지 알고 싶은 독자',
     topic_opening_angle: primaryAuthor
       ? `${primaryAuthor}의 문제의식을 오늘의 일과 삶에 다시 연결하는 장면에서 시작`
@@ -1309,6 +1247,9 @@ async function _applyGeneralTitleFeedback(post, context, options = {}) {
     content: post?.content || '',
     requiredPhrase: context?.category === '도서리뷰' ? String(context?.book_info?.title || '').trim() : '',
   }, options.titleFeedbackDependencies || {});
+  if (titleResult.blocked) {
+    throw new Error(`일반 포스팅 제목 중복 차단: ${titleResult.metadata?.title_selected_reason || 'candidate_exhausted'}`);
+  }
   post.title = titleResult.title;
   post.content = titleResult.content;
   post.charCount = titleResult.content.length;
@@ -1349,26 +1290,6 @@ function buildWriterAbMetadata(post = {}, traceCtx = {}) {
 
 async function _accumulatePublishedPost(postData, quality, traceCtx, options = {}, published = null) {
   await accumulatePostExperience(postData, quality, _buildAccumulationOptions(traceCtx, options, published));
-}
-
-async function _recordPublishedExperiment(postData = {}, published = null) {
-  if (!published?.postId || published?.reused) return;
-
-  try {
-    await recordPublishedExperimentRun({
-      id: published.postId,
-      post_type: postData.postType || 'general',
-      category: postData.category || null,
-      title: postData.title || '',
-      metadata: postData.metadata || {},
-      views: 0,
-      comments: 0,
-      likes: 0,
-      published_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.warn('[블로] experiment run 기록 실패 (무시):', error.message);
-  }
 }
 
 async function _advanceContentTracker({
@@ -1508,26 +1429,8 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   } else if (researchData.lecturePopularPatterns?.length) {
     preparedResearch.popularPatterns = researchData.lecturePopularPatterns;
   }
-  const strategyPlan = BLOG_MARKETING_ENABLED ? (loadLatestStrategy() || {}) : {};
-  const experimentPlaybook = BLOG_MARKETING_ENABLED ? (readExperimentPlaybook() || null) : null;
-  const experimentDimensionKey = experimentPlaybook?.topWinner?.dimension === 'title_pattern'
-    ? 'titlePattern'
-    : experimentPlaybook?.topWinner?.dimension === 'autonomy_lane'
-      ? 'autonomyLane'
-      : 'category';
-  const experimentLoser = experimentPlaybook?.dimensions?.[experimentDimensionKey]?.loser || null;
-  preparedResearch.strategy_experiment_winner = strategyPlan?.experimentLearning?.topWinnerSummary
-    || (
-      experimentPlaybook?.topWinner?.variant
-        ? `최근 실험 승자는 ${experimentPlaybook.topWinner.dimension}:${experimentPlaybook.topWinner.variant} (${Math.round(Number(experimentPlaybook.topWinner.liftPct || 0) * 100)}% lift, n=${experimentPlaybook.topWinner.sampleCount}) 입니다.`
-        : ''
-    );
-  preparedResearch.strategy_experiment_weak_lane = strategyPlan?.experimentLearning?.weakestVariantSummary
-    || (
-      experimentLoser?.variant
-        ? `최근 약한 레인은 ${experimentLoser.dimension}:${experimentLoser.variant} (${Math.round(Number(experimentLoser.liftPct || 0) * 100)}% lift, n=${experimentLoser.sampleCount}) 입니다.`
-        : ''
-    );
+  preparedResearch.strategy_experiment_winner = '';
+  preparedResearch.strategy_experiment_weak_lane = '';
   const pastPosts = await searchPastPosts(lectureTitle);
   if (pastPosts.length > 0) {
     console.log(`[블로] 유사 과거 포스팅 ${pastPosts.length}건 발견 — 차별화 데이터 포함`);
@@ -1547,7 +1450,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   const { category } = preloaded.category ? preloaded : { category: '자기계발' };
   const sectionVariation = preloaded.sectionVariation || {};
   const needsBook = category === '도서리뷰';
-  const strategyPlan = BLOG_MARKETING_ENABLED ? loadLatestStrategy() : null;
+  const strategyPlan = loadLatestStrategy();
 
   console.log(`\n[젬스] 일반 포스팅: ${category}`);
   const writeReq = createMessage('task_request', 'blog-blo', 'blog-gems', {
@@ -1679,13 +1582,6 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     title: context.lectureTitle,
     charCount: post.charCount,
   }, options);
-  await _recordPublishedExperiment({
-    postType: 'lecture',
-    category: lectureCategory,
-    title: postTitle,
-    metadata,
-  }, published);
-
   await _accumulatePublishedPost({
     title: postTitle,
     content: post.content,
@@ -1746,6 +1642,10 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
 
   const titleFeedbackMetadata = await _applyGeneralTitleFeedback(post, context, options);
   const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
+  const finalTitleGuard = await assertFinalGeneralTitle(genTitle, {
+    ...(options.finalTitleGuardDependencies || {}),
+    category: context.category,
+  });
   let homeFeedReport = null;
   let humanizeShadow = null;
 
@@ -1804,6 +1704,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   }, context);
   const metadata = buildWriterAbMetadata(post, traceCtx);
   Object.assign(metadata, titleFeedbackMetadata);
+  metadata.title_history_guard = finalTitleGuard;
   if (autonomy) metadata.autonomy = autonomy;
   if (titleAlignment?.preview_title || titleAlignment?.final_title) {
     metadata.title_alignment = titleAlignment;
@@ -1863,13 +1764,6 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
       shadowOnly: true,
     }).catch((e) => console.warn('[블로/인간화] shadow audit 저장 실패:', e.message));
   }
-  await _recordPublishedExperiment({
-    postType: 'general',
-    category: context.category,
-    title: genTitle,
-    metadata,
-  }, published);
-
   await _accumulatePublishedPost({
     title: genTitle,
     content: post.content,
@@ -2012,23 +1906,11 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     };
   }
 
-  const [senseState, revenueCorrelation, attributionCategoryWeights] = BLOG_MARKETING_ENABLED
-    ? await Promise.all([
-      senseDailyState().catch((error) => {
-        console.warn('[블로] sense-engine 실패 (무시):', error.message);
-        return null;
-      }),
-      analyzeMarketingToRevenue(14).catch((error) => {
-        console.warn('[블로] revenue-correlation 실패 (무시):', error.message);
-        return null;
-      }),
-      fetchRevenueAttributionWeights().catch(() => ({})),
-    ])
-    : [
-      buildMarketingDisabledResult('sense-engine'),
-      buildMarketingDisabledResult('marketing-revenue-correlation'),
-      {},
-    ];
+  // Marketing and social signals are retired. Keep the content-learning plan,
+  // but do not let revenue attribution influence Naver topic selection.
+  const senseState = null;
+  const revenueCorrelation = null;
+  const attributionCategoryWeights = {};
 
   const researchData = await withBlogTelemetry('collection', () => collectAllResearch('general', false), {
     dryRun: !!options.dryRun,
@@ -2125,11 +2007,8 @@ function _compactPreviewTitle(title = '', maxLength = 42) {
   return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
 }
 
-function _summarizeDailyMarketing(daily = {}) {
-  const senseState = daily?.senseState || {};
-  const revenueCorrelation = daily?.revenueCorrelation || {};
+function _summarizeDailyOperations(daily = {}) {
   const strategyPlan = loadLatestStrategy() || {};
-  const experimentPlaybook = readExperimentPlaybook() || null;
   const operationalPatterns = Array.isArray(strategyPlan?.operationalLearning?.patterns)
     ? strategyPlan.operationalLearning.patterns
     : [];
@@ -2137,33 +2016,15 @@ function _summarizeDailyMarketing(daily = {}) {
     const item = operationalPatterns.find((pattern) => String(pattern?.type || '') === type);
     return item?.summary ? String(item.summary) : '';
   };
-  const signal = senseState?.signals?.[0] || null;
-  const signalLabel = signal?.message || (Array.isArray(senseState?.signals) && senseState.signals.length ? `${senseState.signals.length}개 신호 감지` : '특이 신호 없음');
-  const revenueImpact = Number(revenueCorrelation?.revenueImpactPct || 0);
+  const signalLabel = 'Naver 포스팅·피드백 루프';
   const preferredCategory = strategyPlan?.preferredCategory || 'none';
   const preferredPattern = strategyPlan?.preferredTitlePattern || 'none';
   const suppressedPattern = strategyPlan?.suppressedTitlePattern || 'none';
-  const opsTitlePatternSummary = findOperationalSummary('ops_high_performance_title_pattern');
+  const opsTitlePatternSummary = findOperationalSummary('ops_title_pattern_saturation');
   const opsAlignmentSummary = findOperationalSummary('ops_alignment_signal');
   const opsAutonomyLaneSummary = findOperationalSummary('ops_autonomy_lane');
-  const experimentDimensionKey = experimentPlaybook?.topWinner?.dimension === 'title_pattern'
-    ? 'titlePattern'
-    : experimentPlaybook?.topWinner?.dimension === 'autonomy_lane'
-      ? 'autonomyLane'
-      : 'category';
-  const experimentLoser = experimentPlaybook?.dimensions?.[experimentDimensionKey]?.loser || null;
-  const experimentWinnerSummary = strategyPlan?.experimentLearning?.topWinnerSummary
-    || (
-      experimentPlaybook?.topWinner?.variant
-        ? `최근 실험 승자는 ${experimentPlaybook.topWinner.dimension}:${experimentPlaybook.topWinner.variant} (${Math.round(Number(experimentPlaybook.topWinner.liftPct || 0) * 100)}% lift, n=${experimentPlaybook.topWinner.sampleCount}) 입니다.`
-        : ''
-    );
-  const experimentWeakLaneSummary = strategyPlan?.experimentLearning?.weakestVariantSummary
-    || (
-      experimentLoser?.variant
-        ? `최근 약한 레인은 ${experimentLoser.dimension}:${experimentLoser.variant} (${Math.round(Number(experimentLoser.liftPct || 0) * 100)}% lift, n=${experimentLoser.sampleCount}) 입니다.`
-        : ''
-    );
+  const experimentWinnerSummary = '';
+  const experimentWeakLaneSummary = '';
   const evalLatestSummary = String(strategyPlan?.evalLearning?.latestSummary || '');
   const evalRecurringSummary = String(strategyPlan?.evalLearning?.recurringCodeSummary || '');
   const dailyMixPrimaryCategory = String(strategyPlan?.dailyMixPolicy?.primaryCategory || '');
@@ -2176,8 +2037,8 @@ function _summarizeDailyMarketing(daily = {}) {
       nextGeneralCategory,
       getRecentPosts(nextGeneralCategory, 10),
       strategyPlan,
-      senseState,
-      revenueCorrelation
+      null,
+      null
     )
     : null;
   const nextGeneralTitle = selectedGeneralTopic?.title || 'none';
@@ -2196,7 +2057,7 @@ function _summarizeDailyMarketing(daily = {}) {
 
   return {
     signalLabel,
-    revenueImpactPct: revenueImpact,
+    revenueImpactPct: 0,
     preferredCategory,
     preferredPattern,
     suppressedPattern,
@@ -2215,16 +2076,16 @@ function _summarizeDailyMarketing(daily = {}) {
     dailyMixTitlePattern,
     dailyMixRotationMode,
     dailyMixStabilityMode,
-    briefLine: `📈 마케팅 전략: signal=${signalLabel} | impact=${(revenueImpact * 100).toFixed(1)}% | plan=${preferredCategory}/${preferredPattern} | next=${nextGeneralCategory}/${nextGeneralPattern} | predicted=${predictedAdoption} | title=${_compactPreviewTitle(nextGeneralTitle)} | suppress=${suppressedPattern}`,
+    briefLine: `📝 콘텐츠 운영: Naver only | plan=${preferredCategory}/${preferredPattern} | next=${nextGeneralCategory}/${nextGeneralPattern} | predicted=${predictedAdoption} | title=${_compactPreviewTitle(nextGeneralTitle)} | suppress=${suppressedPattern}`,
   };
 }
 
 function _buildDailyReportLines(results, traceCtx, daily = {}) {
-  const marketing = _summarizeDailyMarketing(daily);
+  const operations = _summarizeDailyOperations(daily);
   const contract = buildDailyReportContract({
     traceId: traceCtx.trace_id,
     results,
-    marketing,
+    operations,
   });
   return [
     `📝 [${contract.title}]`,
@@ -2296,12 +2157,12 @@ async function _executeWithWriterContract(traceCtx, startTime, contractId, runne
 
 async function _sendDailyReport(results, traceCtx, options = {}) {
   const hasErrors = results.some(r => r.error);
-  const marketing = _summarizeDailyMarketing(options.daily || {});
+  const operations = _summarizeDailyOperations(options.daily || {});
   const reportLines = _buildDailyReportLines(results, traceCtx, options.daily || {});
   const reportContract = buildDailyReportContract({
     traceId: traceCtx.trace_id,
     results,
-    marketing,
+    operations,
   });
 
   const reportEvent = buildReportEvent({
@@ -2378,7 +2239,7 @@ async function _sendDailyReport(results, traceCtx, options = {}) {
 }
 
 function _buildVerifyResult(daily) {
-  const marketing = _summarizeDailyMarketing(daily);
+  const operations = _summarizeDailyOperations(daily);
   return {
     type: 'verify',
     ok: true,
@@ -2388,7 +2249,7 @@ function _buildVerifyResult(daily) {
     generalScheduled: !!daily.generalCtx,
     lectureCount: Number(daily.config?.lecture_count || 0),
     generalCount: Number(daily.config?.general_count || 0),
-    marketing,
+    operations,
   };
 }
 
@@ -2573,7 +2434,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   context.sectionVariation = _attachWriterPersonas(context.sectionVariation, writerName, 'lecture');
   try {
     const { buildMasterStyleProfile, formatStyleProfileForPrompt } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/master-edit-analyzer.ts'));
-    const profile = await buildMasterStyleProfile({ limit: 30 });
+    const profile = await buildMasterStyleProfile({ limit: 30, postType: 'lecture' });
     const hint = formatStyleProfileForPrompt(profile);
     if (hint) {
       context.sectionVariation.masterStyleHint = hint;
@@ -2707,7 +2568,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
   context.sectionVariation = _attachWriterPersonas(context.sectionVariation, writerName, 'general');
   try {
     const { buildMasterStyleProfile, formatStyleProfileForPrompt } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/master-edit-analyzer.ts'));
-    const profile = await buildMasterStyleProfile({ limit: 30 });
+    const profile = await buildMasterStyleProfile({ limit: 30, postType: 'general', category: context.category });
     const hint = formatStyleProfileForPrompt(profile);
     if (hint) {
       context.sectionVariation.masterStyleHint = hint;

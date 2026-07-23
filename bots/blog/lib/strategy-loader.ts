@@ -35,16 +35,16 @@ function normalizeExecutionDirectives(strategy: BlogStrategyPlan | null = null) 
   return {
     channelPriority: {
       naverBlog: channelPriority.naverBlog || 'primary',
-      instagram: channelPriority.instagram || 'secondary',
-      facebook: channelPriority.facebook || 'supporting',
+      instagram: 'retired',
+      facebook: 'retired',
     },
     executionTargets: {
       blogRegistrationsPerCycle: Number(executionTargets.blogRegistrationsPerCycle || 1),
-      instagramRegistrationsPerCycle: Number(executionTargets.instagramRegistrationsPerCycle || 1),
-      facebookRegistrationsPerCycle: Number(executionTargets.facebookRegistrationsPerCycle || 1),
+      instagramRegistrationsPerCycle: 0,
+      facebookRegistrationsPerCycle: 0,
       replyTargetPerCycle: Number(executionTargets.replyTargetPerCycle || 1),
-      neighborCommentTargetPerCycle: Number(executionTargets.neighborCommentTargetPerCycle || 1),
-      sympathyTargetPerCycle: Number(executionTargets.sympathyTargetPerCycle || 1),
+      neighborCommentTargetPerCycle: 1,
+      sympathyTargetPerCycle: 1,
     },
     titlePolicy: {
       preferredPattern: titlePolicy.preferredPattern || strategy?.preferredTitlePattern || null,
@@ -79,16 +79,16 @@ function normalizeExecutionDirectives(strategy: BlogStrategyPlan | null = null) 
     platformTargets: {
       naverBlog: { postsPerCycle: Number(directives.platformTargets?.naverBlog?.postsPerCycle ?? 1) },
       instagram: {
-        feedPerCycle: Number(directives.platformTargets?.instagram?.feedPerCycle ?? 0),
-        reelsPerCycle: Number(directives.platformTargets?.instagram?.reelsPerCycle ?? 1),
-        storiesPerCycle: Number(directives.platformTargets?.instagram?.storiesPerCycle ?? 0),
+        feedPerCycle: 0,
+        reelsPerCycle: 0,
+        storiesPerCycle: 0,
       },
-      facebook: { postsPerCycle: Number(directives.platformTargets?.facebook?.postsPerCycle ?? 1) },
+      facebook: { postsPerCycle: 0 },
     },
     engagementPolicy: {
       inboundReplyTarget: Number(directives.engagementPolicy?.inboundReplyTarget ?? 1),
-      outboundNeighborCommentTarget: Number(directives.engagementPolicy?.outboundNeighborCommentTarget ?? 2),
-      sympathyTarget: Number(directives.engagementPolicy?.sympathyTarget ?? 3),
+      outboundNeighborCommentTarget: 1,
+      sympathyTarget: 1,
       lowExposureEscalationThreshold: Number(directives.engagementPolicy?.lowExposureEscalationThreshold ?? 3),
     },
     attributionPolicy: {
@@ -96,7 +96,7 @@ function normalizeExecutionDirectives(strategy: BlogStrategyPlan | null = null) 
       attributionWindowDays: Number(directives.attributionPolicy?.attributionWindowDays ?? 7),
       revenueUpliftThreshold: Number(directives.attributionPolicy?.revenueUpliftThreshold ?? 0.05),
     },
-    socialNativeRequired: Boolean(directives.socialNativeRequired),
+    socialNativeRequired: false,
   };
 }
 

@@ -1,65 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { runCommentReply } = require('../lib/commenter.ts');
 const { writeCommenterRunResult } = require('../lib/commenter-run-telemetry.ts');
-
-const LOCK_DIR = path.join(env.PROJECT_ROOT, 'tmp');
-const LOCK_FILE = path.join(LOCK_DIR, 'blog-commenter.lock');
-
-function ensureLockDir() {
-  fs.mkdirSync(LOCK_DIR, { recursive: true });
-}
-
-function readLock() {
-  try {
-    return JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function isPidAlive(pid: number) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function acquireLock() {
-  ensureLockDir();
-  const staleMs = 15 * 60 * 1000;
-  const existing = readLock();
-  if (existing?.pid && isPidAlive(existing.pid)) {
-    return { acquired: false, lock: existing };
-  }
-  if (existing?.startedAt && Date.now() - Number(existing.startedAt) < staleMs) {
-    return { acquired: false, lock: existing };
-  }
-  const lock = { pid: process.pid, startedAt: Date.now() };
-  fs.writeFileSync(LOCK_FILE, JSON.stringify(lock), 'utf8');
-  return { acquired: true, lock };
-}
-
-function releaseLock() {
-  const existing = readLock();
-  if (!existing || existing.pid === process.pid) {
-    try {
-      fs.unlinkSync(LOCK_FILE);
-    } catch {}
-  }
-}
+const { acquireEngagementLock, releaseEngagementLock } = require('../lib/engagement-process-lock.ts');
 
 async function main() {
   const argv = process.argv.slice(2);
   const testMode = process.env.BLOG_COMMENTER_TEST === 'true' || argv.includes('--test-mode');
-  const lockState = acquireLock();
+  const lockState = await acquireEngagementLock();
   if (!lockState.acquired) {
     console.log(`[커멘터] 스킵: already_running pid=${lockState.lock?.pid || 'unknown'}`);
     return;
@@ -87,7 +37,7 @@ async function main() {
 
     console.log(`detected=${result.detected} pending=${result.pending} replied=${result.replied} failed=${result.failed} skipped=${result.skipped}`);
   } finally {
-    releaseLock();
+    releaseEngagementLock(lockState.lock);
   }
 }
 

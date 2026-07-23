@@ -279,8 +279,42 @@ function replaceTitleLine(content = '', title = '') {
   return lines.join('\n');
 }
 
-function fallbackResult(input = {}, reason = 'unknown', rejectedCandidates = []) {
+function fallbackResult(input = {}, reason = 'unknown', rejectedCandidates = [], validCandidates = [], assertDistinctTitle = _assertDistinctGeneralTitle) {
   const baseTitle = String(input.baseTitle || '').trim();
+  const selectedCandidate = validCandidates.find((title) => String(title || '').trim() !== baseTitle)
+    || validCandidates[0]
+    || '';
+  if (selectedCandidate) {
+    return {
+      title: selectedCandidate,
+      content: replaceTitleLine(input.content, selectedCandidate),
+      metadata: {
+        title_candidates: validCandidates.map((title) => ({ title, score: 0, features: [] })),
+        title_rejected_candidates: rejectedCandidates,
+        title_selected_reason: selectedCandidate === baseTitle
+          ? `fallback_existing_title:${reason}`
+          : `fallback_valid_candidate:${reason}`,
+      },
+    };
+  }
+
+  try {
+    assertDistinctTitle(input.category, baseTitle);
+  } catch (error) {
+    return {
+      blocked: true,
+      title: baseTitle,
+      content: replaceTitleLine(input.content, baseTitle),
+      metadata: {
+        title_candidates: [],
+        title_rejected_candidates: [
+          ...rejectedCandidates,
+          { title: baseTitle, reasons: [`recent_title_overlap:${String(error?.message || error).slice(0, 120)}`] },
+        ],
+        title_selected_reason: `blocked_no_distinct_title:${reason}`,
+      },
+    };
+  }
   return {
     title: baseTitle,
     content: replaceTitleLine(input.content, baseTitle),
@@ -319,10 +353,14 @@ async function runTitleFeedbackLoop(input = {}, dependencies = {}) {
           return false;
         }
       });
-    if (candidates.length < 3) return fallbackResult(input, 'candidate_count_below_3', rejectedCandidates);
+    if (candidates.length < 3) {
+      return fallbackResult(input, 'candidate_count_below_3', rejectedCandidates, candidates, assertDistinctTitle);
+    }
 
     const profile = await loadCorrelationProfile({ days: DEFAULT_DAYS, category: input.category });
-    if (!profile?.eligible_features?.length) return fallbackResult(input, 'no_meaningful_crank_signal', rejectedCandidates);
+    if (!profile?.eligible_features?.length) {
+      return fallbackResult(input, 'no_meaningful_crank_signal', rejectedCandidates, candidates, assertDistinctTitle);
+    }
 
     const selected = selectTitleCandidate(candidates, profile);
     return {
@@ -339,7 +377,13 @@ async function runTitleFeedbackLoop(input = {}, dependencies = {}) {
       },
     };
   } catch (error) {
-    return fallbackResult(input, `error:${String(error?.message || error).slice(0, 120)}`);
+    return fallbackResult(
+      input,
+      `error:${String(error?.message || error).slice(0, 120)}`,
+      [],
+      [],
+      assertDistinctTitle,
+    );
   }
 }
 

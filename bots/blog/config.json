@@ -128,11 +128,11 @@
     "neighborCommenter": {
       "enabled": true,
       "blogId": "cafe_library",
-      "maxDaily": 20,
+      "maxDaily": 30,
       "activeStartHour": 9,
       "activeEndHour": 21,
       "maxCollectPerCycle": 20,
-      "maxProcessPerCycle": 20,
+      "maxProcessPerCycle": 1,
       "recentWindowDays": 14,
       "minCommentLen": 45,
       "maxCommentLen": 220,

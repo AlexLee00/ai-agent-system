@@ -35,9 +35,25 @@ const STRUCTURAL_PHRASES = [
   '실무 기준',
 ];
 
+const STRUCTURAL_FRAMES = [
+  { key: 'n_list', pattern: /\d+\s*(가지|개|단계|종|포인트|기준|방법)/u },
+  { key: 'decision_guide', pattern: /(기준으로\s*판단하는\s*법|판단\s*기준|선택\s*기준)/u },
+  { key: 'first_check', pattern: /(먼저\s*확인할|가장\s*먼저\s*확인|시작하기\s*전.*확인)/u },
+  { key: 'book_before_after', pattern: /(읽기\s*전.*(읽은|읽고)\s*(뒤|후)|읽기\s*전후)/u },
+  { key: 'book_transfer', pattern: /(어떻게.*(옮길|적용할|써먹을)|일상에.*옮기)/u },
+  { key: 'book_application', pattern: /(적용\s*포인트|실천\s*포인트|읽고.*바꾼)/u },
+];
+
 function extractStructuralPhrases(text = '') {
   const normalized = normalizeTitle(text);
   return STRUCTURAL_PHRASES.filter((phrase) => normalized.includes(normalizeTitle(phrase)));
+}
+
+function extractStructuralFrames(text = '') {
+  const normalized = normalizeTitle(text);
+  return STRUCTURAL_FRAMES
+    .filter((frame) => frame.pattern.test(normalized))
+    .map((frame) => frame.key);
 }
 
 function leadingTokenSignature(text = '', count = 4) {
@@ -94,6 +110,7 @@ function isTooCloseToRecentTitle(candidate: TitleCandidate, recentTitles: string
   const category = typeof candidate === 'string' ? extractCategoryPrefix(title) : String(candidate?.category || extractCategoryPrefix(title) || '').trim();
   const latestRecentTitle = recentTitles[0] || '';
   const candidateStructure = new Set(extractStructuralPhrases(title));
+  const candidateFrames = new Set(extractStructuralFrames(title));
   const candidateLeading = leadingTokenSignature(title);
 
   if (recentTitles.some((recentTitle) => similarity(recentTitle, title) > 0.4)) {
@@ -117,6 +134,7 @@ function isTooCloseToRecentTitle(candidate: TitleCandidate, recentTitles: string
     const titleDiffOverlap = tokenOverlapRatio(recentTitle, diff);
     const titleTokenOverlap = tokenOverlapRatio(recentTitle, title);
     const sharedStructure = extractStructuralPhrases(recentTitle).filter((phrase) => candidateStructure.has(phrase));
+    const sharedFrames = extractStructuralFrames(recentTitle).filter((frame) => candidateFrames.has(frame));
     const recentLeading = leadingTokenSignature(recentTitle);
 
     if (titleTopicOverlap >= 0.34 || titleQuestionOverlap >= 0.34 || titleDiffOverlap >= 0.4) return true;
@@ -124,6 +142,7 @@ function isTooCloseToRecentTitle(candidate: TitleCandidate, recentTitles: string
     if (sameCategory && sharedStructure.length >= 2 && titleTokenOverlap >= 0.25) return true;
     if (sameCategory && candidateLeading && recentLeading && candidateLeading === recentLeading) return true;
     if (sameCategory && sharedStructure.includes('먼저 확인할') && titleTokenOverlap >= 0.2) return true;
+    if (sameCategory && sharedFrames.length > 0) return true;
     return false;
   });
 }
@@ -151,6 +170,7 @@ module.exports = {
   similarity,
   tokenOverlapRatio,
   extractStructuralPhrases,
+  extractStructuralFrames,
   isTooCloseToRecentTitle,
   mergeRecentTitles,
 };
