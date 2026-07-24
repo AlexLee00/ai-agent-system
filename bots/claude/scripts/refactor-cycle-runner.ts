@@ -16,6 +16,7 @@ process.env.PG_DIRECT = process.env.PG_DIRECT || 'true';
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const ts = require('typescript');
 const { pathToFileURL } = require('url');
 const { execFileSync } = require('child_process');
 
@@ -203,6 +204,98 @@ function safeRead(filePath, limit = 2_000_000) {
   } catch {
     return '';
   }
+}
+
+function unwrapGuardExpression(node) {
+  let current = node;
+  while (
+    current
+    && (
+      ts.isParenthesizedExpression(current)
+      || ts.isAsExpression(current)
+      || ts.isTypeAssertionExpression(current)
+      || ts.isNonNullExpression(current)
+      || (typeof ts.isSatisfiesExpression === 'function' && ts.isSatisfiesExpression(current))
+    )
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function guardedGlobalCalleeName(node) {
+  const current = unwrapGuardExpression(node);
+  if (ts.isIdentifier(current)) return current.text;
+
+  const globalObjects = new Set(['globalThis', 'window', 'self']);
+  if (
+    ts.isPropertyAccessExpression(current)
+    && ts.isIdentifier(current.expression)
+    && globalObjects.has(current.expression.text)
+  ) {
+    return current.name.text;
+  }
+  if (
+    ts.isElementAccessExpression(current)
+    && ts.isIdentifier(current.expression)
+    && globalObjects.has(current.expression.text)
+  ) {
+    const key = unwrapGuardExpression(current.argumentExpression);
+    if (key && (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key))) return key.text;
+  }
+  return null;
+}
+
+function scanRefactorOutputForEvasion(content = '', file = 'refactor-output.ts') {
+  const sourceFile = ts.createSourceFile(
+    String(file || 'refactor-output.ts'),
+    String(content || ''),
+    ts.ScriptTarget.Latest,
+    true,
+    String(file || '').toLowerCase().endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  const findings = [];
+  const addFinding = (rule, node) => {
+    const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    findings.push({
+      rule,
+      file: String(file || 'refactor-output.ts'),
+      line: position.line + 1,
+      column: position.character + 1,
+      snippet: node.getText(sourceFile).replace(/\s+/g, ' ').slice(0, 180),
+    });
+  };
+
+  const visit = (node) => {
+    if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        const specifier = unwrapGuardExpression(node.arguments[0]);
+        if (
+          specifier
+          && ts.isBinaryExpression(specifier)
+          && specifier.operatorToken.kind === ts.SyntaxKind.PlusToken
+        ) {
+          addFinding('dynamic_import_concatenation', node);
+        } else if (specifier && ts.isTemplateExpression(specifier)) {
+          addFinding('dynamic_import_template', node);
+        }
+      } else {
+        const callee = guardedGlobalCalleeName(node.expression);
+        if (callee === 'eval') addFinding('eval_call', node);
+        if (callee === 'Function') addFinding('function_constructor', node);
+      }
+    } else if (ts.isNewExpression(node) && guardedGlobalCalleeName(node.expression) === 'Function') {
+      addFinding('function_constructor', node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return { pass: findings.length === 0, findings };
+}
+
+function outputGuardError(outputGuard) {
+  const findings = Array.isArray(outputGuard?.findings) ? outputGuard.findings : [];
+  return `static_analysis_evasion:${findings.map((finding) => `${finding.rule}@${finding.line}:${finding.column}`).join(',') || 'unknown'}`;
 }
 
 function countLines(filePath) {
@@ -2160,8 +2253,22 @@ function isReadyResult(item) {
   return READY_STAGES.has(item?.stage);
 }
 
+function discardReadyResultsAfterOutputGuard(results) {
+  for (const item of results.filter(isReadyResult)) {
+    item.stage = 'active_discarded_evasion_guard';
+    item.failureClass = 'static_analysis_evasion';
+    item.nextAction = 'discard_shadow_output';
+    item.errorSummary = formatErrorSummary({
+      stage: 'evasion_guard',
+      candidate: item.candidate,
+      error: 'cycle_blocked_by_static_analysis_evasion',
+    });
+  }
+}
+
 function activeFixStepStatus(active) {
   if (!active) return 'none';
+  if (active.outputGuardBlocked) return 'blocked_evasion_guard';
   if (Number(active.autofixedCount || 0) > 0) return 'autofix_complete';
   if (Number(active.unfixableCount || 0) > 0) return 'active_deferred_unfixable';
   return active.ok ? 'none' : 'active_deferred_no_auto_fix';
@@ -2374,6 +2481,7 @@ function buildActiveDocumentContent(context, analysis, active) {
     `- autofix_enabled: ${context.autofixEnabled === true}`,
     `- autofix_attempts_total: ${active.totalFixAttempts || 0}`,
     `- strict_autofixed_ready_for_commit: ${active.strictAutofixedCount || 0}`,
+    `- output_guard_blocked: ${active.outputGuardBlocked === true}`,
     `- deferred: ${deferred.length}`,
     `- changed_files: ${changedFiles.length ? changedFiles.join(', ') : 'none'}`,
     `- applied: ${active.applied === true}`,
@@ -2408,6 +2516,7 @@ function buildActiveDocumentContent(context, analysis, active) {
       item.fixerCapability ? `- fixer_capability: ${item.fixerCapability}` : null,
       item.failureClass ? `- failure_class: ${item.failureClass}` : null,
       item.nextAction ? `- next_action: ${item.nextAction}` : null,
+      item.outputGuard ? `- output_guard_rules: ${item.outputGuard.findings.map((finding) => finding.rule).join(', ') || 'none'}` : null,
       `- builder_pass: ${item.verify?.builderPass ?? false}`,
       `- builder_skipped: ${item.verify?.builderSkipped ?? false}`,
       item.verify?.builderSkipReason ? `- builder_skip_reason: ${item.verify.builderSkipReason}` : null,
@@ -2539,6 +2648,29 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
     }
     if (fix.billingGuard) context.autofixBillingStopped = true;
     if (!fix.ok || !fix.fixedContent) break;
+
+    const outputGuard = scanRefactorOutputForEvasion(fix.fixedContent, fileRel);
+    if (!outputGuard.pass) {
+      const guardError = outputGuardError(outputGuard);
+      attempts[attempts.length - 1].ok = false;
+      attempts[attempts.length - 1].error = guardError;
+      restoreFileSnapshot(snapshots, absolutePath);
+      return {
+        stage: 'active_blocked_evasion_guard',
+        verify,
+        outputGuard,
+        autofixAttempts: attempt,
+        autofix: attempts,
+        priorErrorCount: priorErrors.length,
+        ...initialClassification,
+        fixerCapability: 'blocked_evasion_guard',
+        failureClass: 'static_analysis_evasion',
+        nextAction: 'discard_shadow_output',
+        model: fix.model || null,
+        provider: fix.provider || null,
+        errorSummary: formatErrorSummary({ stage: 'autofix_output_guard', candidate, error: guardError }),
+      };
+    }
 
     const originalFinalNewline = currentContent.endsWith('\r\n')
       ? '\r\n'
@@ -2719,9 +2851,22 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
         });
         continue;
       }
+      const fileRel = relPath(absolutePath);
+      const outputGuard = scanRefactorOutputForEvasion(removed.content, fileRel);
+      if (!outputGuard.pass) {
+        results.push({
+          candidate,
+          stage: 'active_blocked_evasion_guard',
+          outputGuard,
+          fixerCapability: 'blocked_evasion_guard',
+          failureClass: 'static_analysis_evasion',
+          nextAction: 'discard_shadow_output',
+          errorSummary: formatErrorSummary({ stage: 'refactor_output_guard', candidate, error: outputGuardError(outputGuard) }),
+        });
+        break;
+      }
       fs.writeFileSync(absolutePath, removed.content, 'utf8');
       mutationStarted = true;
-      const fileRel = relPath(absolutePath);
 
       let verify = null;
       try {
@@ -2760,6 +2905,7 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
               ...fixed,
             });
           }
+          if (fixed.stage === 'active_blocked_evasion_guard') break;
         } else {
           const classification = classifyFixerCapability({
             errorText: builderErrorText(verify),
@@ -2777,12 +2923,17 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
         }
       }
     }
+    let outputGuardBlocked = results.some((item) => item.stage === 'active_blocked_evasion_guard');
+    if (outputGuardBlocked) {
+      discardReadyResultsAfterOutputGuard(results);
+      changedFiles.length = 0;
+    }
     const successfulFiles = results
       .filter(isReadyResult)
       .map((item) => item.candidate?.file)
       .filter(Boolean);
     patchText = successfulFiles.length > 0 ? patchForSuccessfulFiles(successfulFiles, snapshots) : '';
-    if (context.applyEnabled && !context.dryRun) {
+    if (!outputGuardBlocked && context.applyEnabled && !context.dryRun) {
       let appliedCount = 0;
       for (const item of results.filter(isReadyResult)) {
         const relFile = item.candidate?.file;
@@ -2821,7 +2972,16 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
             };
             const fixed = await runAutofixLoop(context, item.candidate, absStrict, seedVerify, snapshots, { reverify: 'strict' });
             item.autofixAttempts = Number(item.autofixAttempts || 0) + Number(fixed.autofixAttempts || 0);
-            if (isReadyResult(fixed)) {
+            if (fixed.stage === 'active_blocked_evasion_guard') {
+              Object.assign(item, fixed, {
+                candidate: item.candidate,
+                stage: 'active_blocked_evasion_guard',
+                applied: false,
+              });
+              outputGuardBlocked = true;
+              applyResults.push({ file: relFile, applied: false, reason: 'evasion_guard', error: fixed.errorSummary });
+              break;
+            } else if (isReadyResult(fixed)) {
               item.stage = 'active_autofixed_ready_for_commit';
               item.strictAutofixed = true;
               item.verify = item.verify || fixed.verify;
@@ -2922,12 +3082,17 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
         }
       }
       changedFiles.length = 0;
-      for (const file of results.filter(isReadyResult).map((item) => item.candidate?.file).filter(Boolean)) {
-        if (!changedFiles.includes(file)) changedFiles.push(file);
+      if (outputGuardBlocked) {
+        discardReadyResultsAfterOutputGuard(results);
+        patchText = '';
+      } else {
+        for (const file of results.filter(isReadyResult).map((item) => item.candidate?.file).filter(Boolean)) {
+          if (!changedFiles.includes(file)) changedFiles.push(file);
+        }
       }
     }
     const applied = applyResults.some((item) => item.applied);
-    const hasReady = results.some(isReadyResult);
+    const hasReady = !outputGuardBlocked && results.some(isReadyResult);
     const hasDeferred = results.some((item) => !isReadyResult(item));
     const hasUnfixable = results.some((item) => item.stage === 'active_deferred_unfixable');
     const readyResults = results.filter(isReadyResult);
@@ -2939,7 +3104,9 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
     });
     return {
       ok: hasReady,
-      stage: hasReady
+      stage: outputGuardBlocked
+        ? 'active_blocked_evasion_guard'
+        : hasReady
         ? (hasDeferred ? 'active_partial' : allReadyAutofixed ? 'active_autofixed_ready_for_commit' : 'active_verified_ready_for_commit')
         : hasUnfixable ? 'active_deferred_unfixable' : 'active_deferred',
       changedFiles,
@@ -2955,6 +3122,7 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
       strictAutofixedCount: results.filter((item) => item.strictAutofixed === true).length,
       unfixableCount: results.filter((item) => item.stage === 'active_deferred_unfixable').length,
       autofixBillingStopped: Boolean(context.autofixBillingStopped),
+      outputGuardBlocked,
     };
   } finally {
     restoreFileSnapshots(snapshots);
@@ -3372,7 +3540,7 @@ async function runRefactorCycle(options = {}) {
       };
       result.outcome = await recordRefactorOutcome(context, result);
       result.heartbeat = await writeRefactorHeartbeat(context, heartbeatStatusForCycleResult(result), {
-        stage: active.ok ? 'active_complete' : 'active_deferred',
+        stage: active.outputGuardBlocked ? 'active_blocked_evasion_guard' : active.ok ? 'active_complete' : 'active_deferred',
         changedFiles: active.changedFiles,
         patchPath: artifacts.patchRelPath || null,
         builderPass: active.results.every((item) => item.verify?.builderPass !== false),
@@ -3524,5 +3692,6 @@ module.exports = {
   strictGateBaselineEnabled,
   normalizeDirtyScope,
   refactorScopePrefixes,
+  scanRefactorOutputForEvasion,
   unexpectedMutationLines,
 };

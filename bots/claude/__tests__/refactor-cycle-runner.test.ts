@@ -199,6 +199,62 @@ async function test_mode_defaults_off() {
   console.log('✅ refactor-cycle: mode defaults and normalization are safe');
 }
 
+function test_refactor_output_evasion_guard_fixtures() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const fixtures = [
+    {
+      name: 'literal dynamic import',
+      source: 'async function load() { return import("./module.ts"); }\n',
+      pass: true,
+      rules: [],
+    },
+    {
+      name: 'variable dynamic import',
+      source: 'async function load(modulePath) { return import(modulePath); }\n',
+      pass: true,
+      rules: [],
+    },
+    {
+      name: 'concatenated dynamic import',
+      source: 'async function load() { return import("./module" + ".ts"); }\n',
+      pass: false,
+      rules: ['dynamic_import_concatenation'],
+    },
+    {
+      name: 'template dynamic import',
+      source: 'async function load(name) { return import(`./${name}.ts`); }\n',
+      pass: false,
+      rules: ['dynamic_import_template'],
+    },
+    {
+      name: 'eval call',
+      source: 'const value = eval("2 + 2");\n',
+      pass: false,
+      rules: ['eval_call'],
+    },
+    {
+      name: 'Function call',
+      source: 'const compile = Function("return 1");\n',
+      pass: false,
+      rules: ['function_constructor'],
+    },
+    {
+      name: 'Function constructor',
+      source: 'const compile = new Function("return 1");\n',
+      pass: false,
+      rules: ['function_constructor'],
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const result = runner.scanRefactorOutputForEvasion(fixture.source, `${fixture.name}.ts`);
+    assert.strictEqual(result.pass, fixture.pass, fixture.name);
+    assert.deepStrictEqual(result.findings.map((finding) => finding.rule), fixture.rules, fixture.name);
+  }
+  console.log(`✅ refactor-cycle: evasion guard fixtures ${fixtures.map((fixture) => `${fixture.name}=${fixture.pass ? 'pass' : 'block'}`).join(', ')}`);
+}
+
 async function test_refactor_pr_metadata_reads_applied_workflow() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -2103,6 +2159,63 @@ async function test_autofix_success_captures_patch_and_restores() {
   console.log('✅ refactor-cycle: autofix success re-verifies, captures patch, and restores');
 }
 
+async function test_autofix_evasion_guard_fails_cycle_and_discards_output() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { calls, builderModule, reviewerModule } = verifierModulesForAutofix(target);
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      autofixEnabled: true,
+      gitStatusShortFn: () => '',
+      gitStatusScopedFn: () => '',
+      acquireLockFn: async () => ({ ok: true, path: 'mock-lock' }),
+      releaseLockFn: async () => ({ ok: true }),
+      builderModule,
+      reviewerModule,
+      fixerFn: async (_context, params) => ({
+        ok: true,
+        fixedContent: `${params.currentContent}\nasync function load() { return import('../a2a/skills/index' + '.ts'); }\n${AUTOFIX_MARKER}\n`,
+        model: 'mock-evasive-refactorer',
+        provider: 'mock',
+      }),
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'unexpected-commit';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.stage, 'active_blocked_evasion_guard');
+    assert.strictEqual(result.active.results[0].stage, 'active_blocked_evasion_guard');
+    assert.deepStrictEqual(result.active.results[0].outputGuard.findings.map((finding) => finding.rule), [
+      'dynamic_import_concatenation',
+    ]);
+    assert.deepStrictEqual(result.active.changedFiles, []);
+    assert.strictEqual(result.active.patchText, '');
+    assert.deepStrictEqual(result.active.applyResults, []);
+    assert.strictEqual(result.steps.find((step) => step.id === 'fix').status, 'blocked_evasion_guard');
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(calls.builder.length, 1);
+    assert.strictEqual(calls.reviewer.length, 1);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: evasion guard fails the cycle and discards fixer output before apply');
+}
+
 async function test_autofix_preserves_original_final_newline() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -3100,6 +3213,7 @@ async function main() {
   console.log('=== Refactor Cycle Runner 테스트 시작 ===\n');
   const tests = [
     test_mode_defaults_off,
+    test_refactor_output_evasion_guard_fixtures,
     test_refactor_pr_metadata_reads_applied_workflow,
     test_hub_admission_429_does_not_trip_billing_guard,
     test_safe_deferred_cycle_uses_soft_operational_status,
@@ -3153,6 +3267,7 @@ async function main() {
     test_builder_executed_fail_defers,
     test_autofix_off_preserves_phase3_defer,
     test_autofix_success_captures_patch_and_restores,
+    test_autofix_evasion_guard_fails_cycle_and_discards_output,
     test_autofix_preserves_original_final_newline,
     test_autofix_preserves_original_crlf_final_newline,
     test_autofix_failure_defers_unfixable_and_restores,
